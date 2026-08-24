@@ -1,6 +1,7 @@
 param location string
 param prefix string
 param keyVaultId string
+param postgresServerId string
 param tags object = {}
 
 resource virtualNetwork 'Microsoft.Network/virtualNetworks@2024-05-01' = {
@@ -95,6 +96,60 @@ resource keyVaultDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZone
         name: 'vault'
         properties: {
           privateDnsZoneId: privateDnsZone.id
+        }
+      }
+    ]
+  }
+}
+
+resource postgresPrivateDnsZone 'Microsoft.Network/privateDnsZones@2024-06-01' = {
+  name: 'privatelink.postgres.database.azure.com'
+  location: 'global'
+  tags: tags
+}
+
+resource postgresPrivateDnsZoneLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2024-06-01' = {
+  parent: postgresPrivateDnsZone
+  name: '${prefix}-postgres-link'
+  location: 'global'
+  tags: tags
+  properties: {
+    registrationEnabled: false
+    virtualNetwork: {
+      id: virtualNetwork.id
+    }
+  }
+}
+
+resource postgresPrivateEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01' = {
+  name: '${prefix}-pgsql-pe'
+  location: location
+  tags: tags
+  properties: {
+    subnet: {
+      id: privateEndpointsSubnet.id
+    }
+    privateLinkServiceConnections: [
+      {
+        name: '${prefix}-pgsql-connection'
+        properties: {
+          privateLinkServiceId: postgresServerId
+          groupIds: ['postgresqlServer']
+        }
+      }
+    ]
+  }
+}
+
+resource postgresDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2024-05-01' = {
+  parent: postgresPrivateEndpoint
+  name: 'default'
+  properties: {
+    privateDnsZoneConfigs: [
+      {
+        name: 'postgresqlServer'
+        properties: {
+          privateDnsZoneId: postgresPrivateDnsZone.id
         }
       }
     ]

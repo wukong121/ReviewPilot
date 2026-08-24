@@ -77,6 +77,7 @@ module networking 'modules/networking.bicep' = {
     location: location
     prefix: prefix
     keyVaultId: keyVault.outputs.id
+    postgresServerId: database.outputs.serverId
     tags: tags
   }
 }

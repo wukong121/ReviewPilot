@@ -31,4 +31,5 @@ resource database 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2024-08-0
 
 output fqdn string = server.properties.fullyQualifiedDomainName
 output databaseName string = database.name
+output serverId string = server.id
 output serverName string = server.name
