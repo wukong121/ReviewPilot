@@ -12,7 +12,7 @@
 
 | 名称 | 示例/说明 |
 |---|---|
-| `AZURE_CLIENT_ID` | GitHub OIDC 部署应用的 Client ID |
+| `AZURE_CLIENT_ID` | GitHub OIDC 部署用 User-assigned Managed Identity 的 Client ID |
 | `AZURE_TENANT_ID` | Azure subscription 所在 tenant ID |
 | `AZURE_SUBSCRIPTION_ID` | 目标 Azure subscription ID |
 | `AZURE_RESOURCE_GROUP` | 例如 `reviewpilot-dev-rg`；不存在时 workflow 自动创建 |
@@ -128,11 +128,20 @@ POST https://ai-gateway-peterwang.azure-api.net/wangpeter-2401-ai-resource/opena
 
 以下项目不能由同一次 Bicep 部署自举，或者本身属于 Azure Resource Manager 之外的系统，因此需要一次性准备：
 
-1. **GitHub OIDC 部署身份**：它必须先存在，workflow 才能登录 Azure。该身份需要在目标 subscription 上具备创建资源组、资源和 RBAC assignment 的权限，例如 `Contributor` 加 `Role Based Access Control Administrator`。
+1. **GitHub OIDC 部署身份**：它必须先存在，workflow 才能登录 Azure。当前使用 User-assigned Managed Identity `github-developer`，该身份需要在目标 subscription 上具备创建资源组、资源和 RBAC assignment 的权限，例如 `Contributor` 加 `Role Based Access Control Administrator`。
 2. **ReviewPilot Entra 登录应用**：使用 non-production tenant 中的单租户 App Registration 和 Client Secret。它只负责员工登录。
 3. **ACS Email**：Communication Services、已连接的 Email Service 和已验证发件域名必须预先存在。Communication Services 资源必须与 ReviewPilot 部署位于同一个 Resource Group；Bicep 会把 Worker Managed Identity 的 `Contributor` 权限限制在该单个 ACS resource。
 4. **现有 APIM AI 接口**：本项目按需求调用现有 APIM，不创建 APIM 或模型 deployment。
 5. **公司域名和 DNS 管理权限**：部署前只需要确定计划使用的域名，不需要知道 IP，也不需要先创建解析记录。首次部署后，GitHub Actions 会显示默认 FQDN、静态 IP 和 TXT 验证值，再由域名管理员配置 DNS。
+
+workflow 的 deploy job 绑定 GitHub Environment，因此 federated credential 必须按环境创建，`subject` 要与 Actions OIDC token 完全一致。当前仓库使用 GitHub 返回的 immutable owner/repository ID 格式：
+
+```text
+prod: repo:wukong121@79131635/ReviewPilot@1342422898:environment:prod
+dev:  repo:wukong121@79131635/ReviewPilot@1342422898:environment:dev
+```
+
+不要改用 branch subject（例如 `ref:refs/heads/master`）或传统的 `repo:wukong121/ReviewPilot:environment:prod`。Issuer 为 `https://token.actions.githubusercontent.com`，audience 为 `api://AzureADTokenExchange`。当前 prod credential 名为 `github-reviewpilot-prod`。
 
 ## 创建 ReviewPilot Entra 登录应用
 

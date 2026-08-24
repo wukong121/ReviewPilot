@@ -6,7 +6,7 @@ param administratorPassword string
 param highAvailability bool = false
 param tags object = {}
 
-resource server 'Microsoft.DBforPostgreSQL/flexibleServers@2023-12-01' = {
+resource server 'Microsoft.DBforPostgreSQL/flexibleServers@2024-08-01' = {
   name: '${prefix}-pgsql'
   location: location
   tags: tags
@@ -24,7 +24,7 @@ resource server 'Microsoft.DBforPostgreSQL/flexibleServers@2023-12-01' = {
   }
 }
 
-resource database 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2023-12-01' = {
+resource database 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2024-08-01' = {
   parent: server
   name: 'reviewpilot'
   properties: { charset: 'UTF8', collation: 'en_US.utf8' }
