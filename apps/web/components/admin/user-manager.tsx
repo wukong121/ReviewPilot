@@ -61,7 +61,7 @@ export function UserManager({ initialUsers }: { initialUsers: UserRow[] }) {
       const response = await fetch("/api/admin/users", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ entraObjectId, email, displayName, roles, managerId: managerId || undefined }),
+        body: JSON.stringify({ id: editingId, entraObjectId, email, displayName, roles, managerId: managerId || undefined }),
       });
       const result = await response.json() as { error?: string };
       if (!response.ok) throw new Error(result.error ?? "保存用户失败");
@@ -87,7 +87,7 @@ export function UserManager({ initialUsers }: { initialUsers: UserRow[] }) {
           <label>审批经理<select value={managerId} onChange={(event) => setManagerId(event.target.value)}><option value="">暂不指定</option>{managers.map((manager) => <option key={manager.id} value={manager.id}>{manager.displayName}</option>)}</select></label>
           <div className="button-row">{editingId && <button className="secondary-button" type="button" onClick={reset}>取消</button>}<button className="primary-button" disabled={pending || roles.length === 0} type="submit">{pending ? "保存中..." : "保存用户"}</button></div>
         </form>
-        {message && <p className={message.includes("失败") || message.includes("not") || message.includes("must") ? "error-message" : "notice"}>{message}</p>}
+        {message && <p className={message.includes("失败") || message.includes("not") || message.includes("must") || message.includes("already") ? "error-message" : "notice"}>{message}</p>}
       </section>
       <div className="table-wrap"><table><thead><tr><th>用户</th><th>邮箱</th><th>角色</th><th>审批经理</th><th>状态</th><th><span className="sr-only">操作</span></th></tr></thead><tbody>{initialUsers.map((user) => <tr key={user.id}><td>{user.displayName}</td><td>{user.email}</td><td>{user.roles.map((role) => ROLE_LABELS[role]).join(" / ")}</td><td>{user.managerName ?? "--"}</td><td>{user.status}</td><td><button className="secondary-button compact-button" type="button" onClick={() => edit(user)}>编辑</button></td></tr>)}</tbody></table></div>
     </>

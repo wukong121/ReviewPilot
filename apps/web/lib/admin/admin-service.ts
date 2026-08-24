@@ -14,6 +14,7 @@ export async function listUsers() {
 }
 
 export async function authorizeUser(input: {
+  id?: string;
   entraObjectId: string;
   email: string;
   displayName: string;
@@ -21,21 +22,42 @@ export async function authorizeUser(input: {
   managerId?: string;
 }, actor: AdminActor) {
   return prisma.$transaction(async (tx) => {
-    const user = await tx.user.upsert({
-      where: { entraObjectId: input.entraObjectId },
-      create: {
-        entraObjectId: input.entraObjectId,
-        email: input.email.toLowerCase(),
-        displayName: input.displayName,
-        roles: { create: [...new Set(input.roles)].map((role) => ({ role })) },
+    const email = input.email.toLowerCase();
+    const target = input.id
+      ? await tx.user.findUnique({ where: { id: input.id }, select: { id: true } })
+      : await tx.user.findUnique({ where: { entraObjectId: input.entraObjectId }, select: { id: true } });
+    if (input.id && !target) {
+      throw Object.assign(new Error("user not found"), { status: 404 });
+    }
+    const conflict = await tx.user.findFirst({
+      where: {
+        OR: [{ entraObjectId: input.entraObjectId }, { email }],
+        ...(target ? { NOT: { id: target.id } } : {}),
       },
-      update: {
-        email: input.email.toLowerCase(),
-        displayName: input.displayName,
-        status: UserStatus.ACTIVE,
-        roles: { deleteMany: {}, create: [...new Set(input.roles)].map((role) => ({ role })) },
-      },
+      select: { entraObjectId: true, email: true },
     });
+    if (conflict) {
+      const field = conflict.entraObjectId === input.entraObjectId ? "Entra Object ID" : "email";
+      throw Object.assign(new Error(`${field} already belongs to another user`), { status: 409 });
+    }
+
+    const data = {
+      entraObjectId: input.entraObjectId,
+      email,
+      displayName: input.displayName,
+      status: UserStatus.ACTIVE,
+      roles: { deleteMany: {}, create: [...new Set(input.roles)].map((role) => ({ role })) },
+    };
+    const user = target
+      ? await tx.user.update({ where: { id: target.id }, data })
+      : await tx.user.create({
+        data: {
+          entraObjectId: input.entraObjectId,
+          email,
+          displayName: input.displayName,
+          roles: { create: [...new Set(input.roles)].map((role) => ({ role })) },
+        },
+      });
     await tx.employeeManager.updateMany({
       where: { employeeId: user.id, effectiveTo: null },
       data: { effectiveTo: new Date() },
