@@ -25,7 +25,7 @@ export default async function MyReviewsPage() {
         <div className="review-list">
           {reviews.map((review) => (
             <article className="review-card" key={review.id}>
-              <div><span className="status-badge">{STATUS_LABELS[review.currentVersion?.status ?? ""] ?? "未开始"}</span><h2>{review.cycle.name}</h2><p>{review.cycle.periodStart.toLocaleDateString("zh-CN")} - {review.cycle.periodEnd.toLocaleDateString("zh-CN")}</p></div>
+              <div><span className="status-badge">{STATUS_LABELS[review.currentVersion?.status ?? ""] ?? "未开始"}</span><h2>{review.cycle.name}</h2><p>{review.cycle.periodStart.toLocaleDateString("zh-CN")} - {review.cycle.periodEnd.toLocaleDateString("zh-CN")}</p>{review.latestApproval && <p className="review-comment-preview"><strong>经理意见：</strong>{review.latestApproval.comment}</p>}</div>
               <Link className="primary-link" href={`/my-reviews/${review.id}`}>{review.currentVersion?.status === "DRAFT" ? "开始自评" : review.currentVersion?.status === "REVISION_DRAFT" ? "继续修改" : "查看自评"}</Link>
             </article>
           ))}

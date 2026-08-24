@@ -6,6 +6,7 @@ import {
   type ReviewVersionStatus,
 } from "@employee-review/db";
 import {
+  AiSummarySchema,
   TemplateDefinitionSchema,
   computeScores,
   type ComputedScores,
@@ -308,7 +309,7 @@ export async function listMyReviews(actorId: string) {
     include: {
       cycle: true,
       versions: {
-        select: { id: true, version: true, status: true, submittedAt: true, updatedAt: true },
+        select: { id: true, version: true, status: true, submittedAt: true, updatedAt: true, approval: { select: { decision: true, comment: true, decidedAt: true } } },
         orderBy: { version: "desc" },
       },
     },
@@ -325,6 +326,7 @@ export async function listMyReviews(actorId: string) {
       status: review.cycle.status,
     },
     currentVersion: review.versions.find((version) => version.id === review.currentVersionId) ?? null,
+    latestApproval: review.versions.find((version) => version.approval)?.approval ?? null,
     versionCount: review.versions.length,
   }));
 }
@@ -376,7 +378,7 @@ export async function getMyReview(actorId: string, reviewId: string) {
         capabilityAverage: Number(version.computedScore.capabilityAverage),
         behaviorCount: version.computedScore.behaviorCount,
       } : null,
-      aiSummary: version.aiSummary?.summaryJson ?? null,
+      aiSummary: version.aiSummary ? AiSummarySchema.safeParse(version.aiSummary.summaryJson).data ?? null : null,
       approval: version.approval ? {
         decision: version.approval.decision,
         comment: version.approval.comment,

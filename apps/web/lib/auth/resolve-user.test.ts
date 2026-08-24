@@ -14,6 +14,7 @@ vi.mock("@employee-review/db", () => ({
 }));
 
 import { resolveAuthenticatedUser } from "./resolve-user";
+import { normalizeEntraEmail } from "./entra-email";
 
 const identity = {
   oid: "212a9c74-1c01-42fa-94de-6865e82faf80",
@@ -22,7 +23,12 @@ const identity = {
 };
 
 describe("resolveAuthenticatedUser", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    prismaMock.$transaction.mockImplementation(async (callback) => callback({
+      user: { findFirst: vi.fn().mockResolvedValue(null), create: vi.fn().mockImplementation(({ data }) => ({ id: "user-new", ...data, roles: data.roles.create })) },
+    }));
+  });
 
   it("binds an email-preauthorized user to the first Entra Object ID", async () => {
     prismaMock.user.findUnique
@@ -79,5 +85,37 @@ describe("resolveAuthenticatedUser", () => {
     expect(prismaMock.user.findUnique).toHaveBeenNthCalledWith(2, expect.objectContaining({
       where: { email: "menghanguo@microsoft.com" },
     }));
+  });
+
+  it("accepts a guest EXT user principal name when no email claim is present", async () => {
+    prismaMock.user.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce(null);
+
+    const user = await resolveAuthenticatedUser({
+      ...identity,
+      preferred_username: "menghanguo_microsoft.com#EXT#@fdpo.onmicrosoft.com",
+    }, new Set());
+
+    expect(user).toEqual(expect.objectContaining({ email: "menghanguo@microsoft.com" }));
+  });
+
+  it("creates an unknown tenant user with the employee role", async () => {
+    prismaMock.user.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce(null);
+
+    const user = await resolveAuthenticatedUser(identity, new Set());
+
+    expect(user).toEqual(expect.objectContaining({
+      entraObjectId: identity.oid,
+      roles: [{ role: "EMPLOYEE" }],
+    }));
+  });
+});
+
+describe("normalizeEntraEmail", () => {
+  it("decodes a Guest EXT UPN to the external mailbox", () => {
+    expect(normalizeEntraEmail("menghanguo_microsoft.com#EXT#@fdpo.onmicrosoft.com")).toBe("menghanguo@microsoft.com");
+  });
+
+  it("rejects identifiers that are neither an email nor a Guest UPN", () => {
+    expect(normalizeEntraEmail("not-an-identity")).toBeNull();
   });
 });

@@ -11,8 +11,8 @@ const EntraProfileSchema = z.object({
   oid: z.string().uuid(),
   tid: z.string().uuid(),
   name: z.string().min(1).optional(),
-  email: z.string().email().optional(),
-  preferred_username: z.string().email(),
+  email: z.string().optional(),
+  preferred_username: z.string().min(1),
 });
 
 function productionValue(name: string): string {

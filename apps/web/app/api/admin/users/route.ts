@@ -6,7 +6,7 @@ import { errorResponse } from "../../../../lib/http/error-response";
 
 const UserSchema = z.object({
   id: z.string().uuid().optional(),
-  email: z.string().email(), displayName: z.string().trim().optional(),
+  email: z.string().trim().min(1), displayName: z.string().trim().optional(),
   roles: z.array(z.enum(["EMPLOYEE", "MANAGER", "ADMIN"])).min(1), managerId: z.string().uuid().optional(),
   resetEntraBinding: z.boolean().optional(),
 });

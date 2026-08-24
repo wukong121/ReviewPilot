@@ -1,10 +1,22 @@
 import { Role, UserStatus, prisma } from "@employee-review/db";
 
+import { normalizeEntraEmail } from "./entra-email";
+
 interface EntraIdentity {
   oid: string;
   name?: string;
   email?: string;
   preferred_username: string;
+}
+
+export function identityEmail(identity: EntraIdentity): string | null {
+  const candidates = [identity.email, identity.preferred_username];
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    const normalized = normalizeEntraEmail(candidate);
+    if (normalized) return normalized;
+  }
+  return null;
 }
 
 export async function resolveAuthenticatedUser(identity: EntraIdentity, bootstrapObjectIds: ReadonlySet<string>) {
@@ -16,7 +28,8 @@ export async function resolveAuthenticatedUser(identity: EntraIdentity, bootstra
     return byObjectId.status === UserStatus.ACTIVE ? byObjectId : null;
   }
 
-  const email = (identity.email ?? identity.preferred_username).toLowerCase();
+  const email = identityEmail(identity);
+  if (!email) return null;
   const byEmail = await prisma.user.findUnique({ where: { email }, include: { roles: true } });
   if (byEmail) {
     if (byEmail.status !== UserStatus.ACTIVE || byEmail.entraObjectId !== null) return null;
@@ -28,20 +41,20 @@ export async function resolveAuthenticatedUser(identity: EntraIdentity, bootstra
     return prisma.user.findUnique({ where: { entraObjectId: identity.oid }, include: { roles: true } });
   }
 
-  if (!bootstrapObjectIds.has(identity.oid.toLowerCase())) return null;
+  const isBootstrapAdmin = bootstrapObjectIds.has(identity.oid.toLowerCase());
   return prisma.$transaction(async (tx) => {
-    const activeAdmin = await tx.user.findFirst({
+    const activeAdmin = isBootstrapAdmin ? await tx.user.findFirst({
       where: { status: UserStatus.ACTIVE, roles: { some: { role: Role.ADMIN } } },
       select: { id: true },
-    });
-    if (activeAdmin) return null;
+    }) : null;
+    const roles = isBootstrapAdmin && !activeAdmin ? [Role.ADMIN, Role.EMPLOYEE] : [Role.EMPLOYEE];
 
     return tx.user.create({
       data: {
         entraObjectId: identity.oid,
         email,
         displayName: identity.name ?? identity.preferred_username,
-        roles: { create: [{ role: Role.ADMIN }, { role: Role.EMPLOYEE }] },
+        roles: { create: roles.map((role) => ({ role })) },
       },
       include: { roles: true },
     });

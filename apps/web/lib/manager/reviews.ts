@@ -1,4 +1,4 @@
-import { TemplateDefinitionSchema } from "@employee-review/domain";
+import { AiSummarySchema, TemplateDefinitionSchema } from "@employee-review/domain";
 import { prisma } from "@employee-review/db";
 
 export interface ManagerReviewFilters {
@@ -77,7 +77,7 @@ export async function getManagerReview(reviewId: string, actorId: string) {
         capabilityAverage: Number(version.computedScore.capabilityAverage),
         behaviorCount: version.computedScore.behaviorCount,
       } : null,
-      aiSummary: version.aiSummary?.summaryJson ?? null,
+      aiSummary: version.aiSummary ? AiSummarySchema.safeParse(version.aiSummary.summaryJson).data ?? null : null,
       approval: version.approval ? {
         decision: version.approval.decision,
         comment: version.approval.comment,

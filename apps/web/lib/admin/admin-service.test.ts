@@ -9,6 +9,7 @@ const { prismaMock, tx } = vi.hoisted(() => {
       create: vi.fn(),
       count: vi.fn(),
     },
+    reviewCycle: { findUnique: vi.fn(), update: vi.fn() },
     employeeManager: { updateMany: vi.fn(), create: vi.fn() },
     auditEvent: { create: vi.fn() },
   };
@@ -26,7 +27,7 @@ vi.mock("@employee-review/db", () => ({
   prisma: prismaMock,
 }));
 
-import { authorizeUser, setUserActiveState } from "./admin-service";
+import { authorizeUser, setUserActiveState, updateCycleSchedule } from "./admin-service";
 
 describe("authorizeUser", () => {
   beforeEach(() => {
@@ -129,5 +130,43 @@ describe("setUserActiveState", () => {
 
     expect(tx.employeeManager.updateMany).not.toHaveBeenCalled();
     expect(tx.user.update).toHaveBeenCalledWith({ where: { id: "user-1" }, data: { status: "ACTIVE" } });
+  });
+});
+
+describe("updateCycleSchedule", () => {
+  const previousOpensAt = new Date("2026-09-01T00:00:00.000Z");
+  const previousDueAt = new Date("2026-09-30T00:00:00.000Z");
+  const opensAt = new Date("2026-09-02T00:00:00.000Z");
+  const dueAt = new Date("2026-10-07T00:00:00.000Z");
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    tx.reviewCycle.findUnique.mockResolvedValue({ id: "cycle-1", status: "OPEN", opensAt: previousOpensAt, dueAt: previousDueAt });
+    tx.reviewCycle.update.mockResolvedValue({ id: "cycle-1", opensAt, dueAt });
+    tx.auditEvent.create.mockResolvedValue({ id: "audit-1" });
+  });
+
+  it("updates an open cycle schedule and audits previous values", async () => {
+    await updateCycleSchedule("cycle-1", opensAt, dueAt, { id: "admin-1" });
+
+    expect(tx.reviewCycle.update).toHaveBeenCalledWith({ where: { id: "cycle-1" }, data: { opensAt, dueAt } });
+    expect(tx.auditEvent.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        action: "CYCLE_SCHEDULE_UPDATED",
+        metadataJson: expect.objectContaining({ previousDueAt: previousDueAt.toISOString(), dueAt: dueAt.toISOString() }),
+      }),
+    }));
+  });
+
+  it.each(["CLOSED", "ARCHIVED"])("rejects schedule changes for a %s cycle", async (status) => {
+    tx.reviewCycle.findUnique.mockResolvedValue({ id: "cycle-1", status, opensAt: previousOpensAt, dueAt: previousDueAt });
+
+    await expect(updateCycleSchedule("cycle-1", opensAt, dueAt, { id: "admin-1" })).rejects.toMatchObject({ status: 409 });
+    expect(tx.reviewCycle.update).not.toHaveBeenCalled();
+  });
+
+  it("rejects a due time before the open time", async () => {
+    await expect(updateCycleSchedule("cycle-1", dueAt, opensAt, { id: "admin-1" })).rejects.toMatchObject({ status: 400 });
+    expect(tx.reviewCycle.findUnique).not.toHaveBeenCalled();
   });
 });

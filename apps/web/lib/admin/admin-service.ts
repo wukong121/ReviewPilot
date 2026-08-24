@@ -1,6 +1,8 @@
 import { Prisma, Role, TemplateStatus, UserStatus, prisma } from "@employee-review/db";
 import { TemplateDefinitionSchema, type TemplateDefinition } from "@employee-review/domain";
 
+import { normalizeEntraEmail } from "../auth/entra-email";
+
 interface AdminActor { id: string }
 
 export async function listUsers() {
@@ -22,7 +24,8 @@ export async function authorizeUser(input: {
   resetEntraBinding?: boolean;
 }, actor: AdminActor) {
   return prisma.$transaction(async (tx) => {
-    const email = input.email.toLowerCase();
+    const email = normalizeEntraEmail(input.email);
+    if (!email) throw Object.assign(new Error("email or Guest UPN is invalid"), { status: 400 });
     const displayName = input.displayName?.trim() || email.split("@")[0];
     const target = input.id
       ? await tx.user.findUnique({ where: { id: input.id }, select: { id: true } })
@@ -221,6 +224,37 @@ export async function createCycle(input: {
   return cycle;
 }
 
+export async function updateCycleSchedule(cycleId: string, opensAt: Date, dueAt: Date, actor: AdminActor) {
+  if (opensAt > dueAt) throw Object.assign(new Error("open time must be before the due time"), { status: 400 });
+  return prisma.$transaction(async (tx) => {
+    const cycle = await tx.reviewCycle.findUnique({
+      where: { id: cycleId },
+      select: { id: true, status: true, opensAt: true, dueAt: true },
+    });
+    if (!cycle) throw Object.assign(new Error("cycle not found"), { status: 404 });
+    if (cycle.status === "CLOSED" || cycle.status === "ARCHIVED") {
+      throw Object.assign(new Error("closed or archived cycle schedule cannot be changed"), { status: 409 });
+    }
+
+    const updated = await tx.reviewCycle.update({ where: { id: cycle.id }, data: { opensAt, dueAt } });
+    await tx.auditEvent.create({
+      data: {
+        actorId: actor.id,
+        action: "CYCLE_SCHEDULE_UPDATED",
+        entityType: "ReviewCycle",
+        entityId: cycle.id,
+        metadataJson: {
+          previousOpensAt: cycle.opensAt.toISOString(),
+          previousDueAt: cycle.dueAt.toISOString(),
+          opensAt: opensAt.toISOString(),
+          dueAt: dueAt.toISOString(),
+        },
+      },
+    });
+    return updated;
+  });
+}
+
 export async function openCycle(cycleId: string, actor: AdminActor) {
   return prisma.$transaction(async (tx) => {
     const cycle = await tx.reviewCycle.findUnique({ where: { id: cycleId }, include: { templateVersion: true } });
@@ -244,8 +278,7 @@ export async function openCycle(cycleId: string, actor: AdminActor) {
         },
       },
     });
-    const missingManager = employees.find((employee) => !employee.employeeManagers[0]);
-    if (missingManager) throw Object.assign(new Error(`employee ${missingManager.id} has no active manager`), { status: 409 });
+    const assignedEmployees = employees.filter((employee) => employee.employeeManagers[0]);
 
     const updated = await tx.reviewCycle.updateMany({
       where: { id: cycleId, status: { in: ["DRAFT", "CLOSED"] } },
@@ -253,7 +286,7 @@ export async function openCycle(cycleId: string, actor: AdminActor) {
     });
     if (updated.count !== 1) throw Object.assign(new Error("cycle cannot be opened from its current status"), { status: 409 });
 
-    for (const employee of employees) {
+    for (const employee of assignedEmployees) {
       const review = await tx.review.upsert({
         where: { cycleId_employeeId: { cycleId, employeeId: employee.id } },
         create: { cycleId, employeeId: employee.id, approverManagerId: employee.employeeManagers[0].managerId },
@@ -265,8 +298,8 @@ export async function openCycle(cycleId: string, actor: AdminActor) {
       }
     }
     await tx.auditEvent.create({
-      data: { actorId: actor.id, action: "CYCLE_OPENED", entityType: "ReviewCycle", entityId: cycleId, metadataJson: { employeeCount: employees.length } },
+      data: { actorId: actor.id, action: "CYCLE_OPENED", entityType: "ReviewCycle", entityId: cycleId, metadataJson: { employeeCount: assignedEmployees.length, skippedWithoutManager: employees.length - assignedEmployees.length } },
     });
-    return { id: cycleId, status: "OPEN" as const, reviewCount: employees.length };
+    return { id: cycleId, status: "OPEN" as const, reviewCount: assignedEmployees.length, skippedWithoutManager: employees.length - assignedEmployees.length };
   });
 }

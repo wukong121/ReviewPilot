@@ -102,10 +102,10 @@ export function UserManager({ initialUsers, currentUserId }: { initialUsers: Use
   return (
     <>
       <section className="admin-panel" aria-labelledby="user-form-title">
-        <div className="section-heading"><div><h2 id="user-form-title">{editingId ? "更新用户" : "添加用户"}</h2><p>只需填写公司邮箱。用户首次通过 Entra SSO 登录时，系统会自动绑定其 Object ID。</p></div></div>
+        <div className="section-heading"><div><h2 id="user-form-title">{editingId ? "更新用户" : "添加用户"}</h2><p>用户会在首次 Entra SSO 登录时自动创建；手工添加时可填写真实邮箱或 Guest `#EXT#` UPN。</p></div></div>
         <form className="admin-form" onSubmit={(event) => void submit(event)}>
           <label>姓名（可选）<input type="text" value={displayName} onChange={(event) => setDisplayName(event.target.value)} /></label>
-          <label>邮箱<input type="email" required value={email} onChange={(event) => setEmail(event.target.value)} /></label>
+          <label>邮箱或 Guest UPN<input type="text" required value={email} onChange={(event) => setEmail(event.target.value)} /></label>
           <fieldset><legend>角色</legend><div className="role-options">{(["EMPLOYEE", "MANAGER", "ADMIN"] as Role[]).map((role) => <label className="check-row" key={role}><input type="checkbox" checked={roles.includes(role)} onChange={() => toggleRole(role)} />{ROLE_LABELS[role]}</label>)}</div></fieldset>
           <label>审批经理<select value={managerId} onChange={(event) => setManagerId(event.target.value)}><option value="">暂不指定</option>{managers.map((manager) => <option key={manager.id} value={manager.id}>{manager.displayName}</option>)}</select></label>
           {editingId && initialUsers.find((user) => user.id === editingId)?.entraObjectId && <label className="check-row"><input type="checkbox" checked={resetEntraBinding} onChange={(event) => setResetEntraBinding(event.target.checked)} />重置 SSO 绑定，由该邮箱下次登录时重新绑定</label>}
