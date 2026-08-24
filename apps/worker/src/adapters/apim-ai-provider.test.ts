@@ -21,24 +21,38 @@ function response(status: number, body: unknown): Response {
 }
 
 describe("ApimAiProvider", () => {
-  it("preserves the APIM API base path and sends its configured key header", async () => {
+  it("uses the APIM v1 chat route and sends the model with its configured key header", async () => {
     const fetcher = vi.fn().mockResolvedValue(
       response(200, { choices: [{ message: { content: JSON.stringify(validSummary) } }] }),
     );
     const provider = new ApimAiProvider({
       baseUrl: "https://ai-gateway.example.test/wangpeter-2401-ai-resource",
       apiKey: "test-key",
-      deployment: "gpt-5.4-mini",
-      apiVersion: "2024-10-21",
+      deployment: "gpt-5.5",
     }, { fetcher, wait: vi.fn() });
 
     await provider.generate({ snapshot: {} });
 
     const [url, init] = fetcher.mock.calls[0] as [URL, RequestInit];
     expect(url.toString()).toBe(
-      "https://ai-gateway.example.test/wangpeter-2401-ai-resource/openai/deployments/gpt-5.4-mini/chat/completions?api-version=2024-10-21",
+      "https://ai-gateway.example.test/wangpeter-2401-ai-resource/openai/v1/chat/completions",
     );
     expect(new Headers(init.headers).get("api-key")).toBe("test-key");
+    const requestBody = JSON.parse(init.body as string);
+    expect(requestBody.model).toBe("gpt-5.5");
+    expect(requestBody).not.toHaveProperty("temperature");
+    expect(requestBody.response_format).toMatchObject({
+      type: "json_schema",
+      json_schema: {
+        name: "employee_review_summary",
+        strict: true,
+        schema: {
+          type: "object",
+          additionalProperties: false,
+          required: expect.arrayContaining(["overallSummary", "dimensionSummaries", "strengths"]),
+        },
+      },
+    });
   });
 
   it("retries 429 and validates the final JSON response", async () => {
@@ -49,7 +63,6 @@ describe("ApimAiProvider", () => {
       baseUrl: "https://apim.example.test",
       apiKey: "test-key",
       deployment: "summary-model",
-      apiVersion: "2025-01-01-preview",
     }, { fetcher, wait: vi.fn() });
 
     await expect(provider.generate({ snapshot: { answers: [] } })).resolves.toEqual(validSummary);
@@ -58,14 +71,14 @@ describe("ApimAiProvider", () => {
 
   it("classifies malformed model JSON as retryable", async () => {
     const fetcher = vi.fn().mockResolvedValue(response(200, { choices: [{ message: { content: "not-json" } }] }));
-    const provider = new ApimAiProvider({ baseUrl: "https://apim.test", apiKey: "key", deployment: "model", apiVersion: "v1" }, { fetcher, wait: vi.fn() });
+    const provider = new ApimAiProvider({ baseUrl: "https://apim.test", apiKey: "key", deployment: "model" }, { fetcher, wait: vi.fn() });
 
     await expect(provider.generate({ snapshot: {} })).rejects.toMatchObject({ code: "AI_INVALID_RESPONSE", retryable: true });
   });
 
   it("classifies a 401 as a permanent authentication error", async () => {
     const fetcher = vi.fn().mockResolvedValue(response(401, { error: "invalid key" }));
-    const provider = new ApimAiProvider({ baseUrl: "https://apim.test", apiKey: "key", deployment: "model", apiVersion: "v1" }, { fetcher, wait: vi.fn() });
+    const provider = new ApimAiProvider({ baseUrl: "https://apim.test", apiKey: "key", deployment: "model" }, { fetcher, wait: vi.fn() });
 
     await expect(provider.generate({ snapshot: {} })).rejects.toEqual(expect.objectContaining<Partial<AiProviderError>>({ code: "AI_AUTH", retryable: false }));
   });

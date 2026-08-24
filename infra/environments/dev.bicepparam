@@ -13,7 +13,6 @@ param applicationSecrets = {
   'apim-base-url': readEnvironmentVariable('APIM_BASE_URL')
   'apim-api-key': readEnvironmentVariable('APIM_API_KEY')
   'apim-deployment': readEnvironmentVariable('APIM_DEPLOYMENT')
-  'apim-api-version': readEnvironmentVariable('APIM_API_VERSION')
   'acs-email-endpoint': readEnvironmentVariable('ACS_EMAIL_ENDPOINT')
   'acs-email-sender': readEnvironmentVariable('ACS_EMAIL_SENDER')
   'public-base-url': readEnvironmentVariable('PUBLIC_BASE_URL')

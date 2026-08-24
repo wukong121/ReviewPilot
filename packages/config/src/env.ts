@@ -24,7 +24,6 @@ export const WorkerEnvSchema = SharedSchema.extend({
   APIM_BASE_URL: HttpsUrlSchema,
   APIM_API_KEY: z.string().min(1),
   APIM_DEPLOYMENT: z.string().min(1),
-  APIM_API_VERSION: z.string().min(1),
   MANAGED_IDENTITY_CLIENT_ID: z.string().uuid().optional(),
   GRAPH_TENANT_ID: z.string().uuid().optional(),
   GRAPH_CLIENT_ID: z.string().uuid().optional(),

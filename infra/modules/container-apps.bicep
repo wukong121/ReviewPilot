@@ -97,7 +97,6 @@ resource worker 'Microsoft.App/containerApps@2024-03-01' = {
           { name: 'APIM_BASE_URL', secretRef: 'apim-base-url' }
           { name: 'APIM_API_KEY', secretRef: 'apim-api-key' }
           { name: 'APIM_DEPLOYMENT', secretRef: 'apim-deployment' }
-          { name: 'APIM_API_VERSION', secretRef: 'apim-api-version' }
           { name: 'MANAGED_IDENTITY_CLIENT_ID', value: identityClientId }
           { name: 'ACS_EMAIL_ENDPOINT', secretRef: 'acs-email-endpoint' }
           { name: 'ACS_EMAIL_SENDER', secretRef: 'acs-email-sender' }

@@ -22,7 +22,6 @@
 | `BOOTSTRAP_ADMIN_OBJECT_IDS` | 首位管理员 Entra Object ID；多个值用英文逗号分隔 |
 | `APIM_BASE_URL` | 现有 APIM 地址，例如 `https://company-apim.azure-api.net` |
 | `APIM_DEPLOYMENT` | APIM 后端 AI deployment/model 标识 |
-| `APIM_API_VERSION` | APIM/OpenAI API version |
 | `ACS_COMMUNICATION_SERVICE_NAME` | ACS Communication Services 资源名，例如 `reviewpilot-prod-acs`；必须位于 `AZURE_RESOURCE_GROUP` 中 |
 | `ACS_EMAIL_ENDPOINT` | ACS endpoint，例如 `https://reviewpilot-prod-acs.unitedstates.communication.azure.com` |
 | `ACS_EMAIL_SENDER` | 已验证域名的完整 MailFrom 地址 |
@@ -59,11 +58,11 @@ ENTRA_TENANT_ID=16b3c013-d300-468d-ac64-7eda0820b6d3
 
 ## 获取 APIM 配置值
 
-ReviewPilot 调用的是 APIM 后面的 Azure OpenAI Chat Completions 接口。APIM API 名称、Base path 和模型 deployment 是三个不同概念：
+ReviewPilot 调用的是 APIM 后面的 OpenAI v1 Chat Completions 接口。APIM API 名称、Base path 和模型标识是三个不同概念：
 
 - API 名称，例如 `wangpeter-2027-audio-resource`，只是 APIM 中的管理名称；
 - Base path，例如 `codex`，是公开 URL 的路径前缀；
-- Model deployment，例如 `reviewpilot-summary-prod`，才是 `APIM_DEPLOYMENT`。
+- Model，例如 `gpt-5.5`，才是 `APIM_DEPLOYMENT`。
 
 在 APIM 的 API **Settings** 页面看到 Backend URL 为空时，说明仅凭该页面无法确定模型 deployment；应先确认 API 已配置 Backend/Policy 和 Chat Completions operation。
 
@@ -72,62 +71,41 @@ ReviewPilot 调用的是 APIM 后面的 Azure OpenAI Chat Completions 接口。A
 | GitHub 配置 | 获取方式 |
 |---|---|
 | `APIM_BASE_URL` | APIM 的实际 Gateway URL 加 API Base path，例如 `https://<gateway-host>/codex`。不要使用 Portal 示例中的 `example.azure-api.net`。 |
-| `APIM_DEPLOYMENT` | Azure AI Foundry/Azure OpenAI **Deployments** 页面的 Deployment name，或 APIM 管理员指定的 deployment alias。不是 API 名称，也不是 `codex`。 |
-| `APIM_API_VERSION` | 已配置 operation/backend URL 中的 `api-version`，必须是后端支持的版本。 |
+| `APIM_DEPLOYMENT` | APIM 后端接受的 model/deployment 名称，例如 `gpt-5.5`。不是 API 名称或 Base path。 |
 | `APIM_API_KEY` | 有权调用该 API 的 APIM subscription key；保存在 GitHub Secret，不要使用 Azure OpenAI 后端 Key。 |
 
 在 APIM 中进入 **APIs** → 目标 API → **Operations/Test**，找到 Chat Completions operation。一个与当前 Worker 兼容的请求 URL 应类似：
 
 ```text
-https://<gateway-host>/codex/openai/deployments/<deployment-name>/chat/completions?api-version=<api-version>
+https://<gateway-host>/<api-base-path>/openai/v1/chat/completions
 ```
 
-如果 APIM 暴露的是 `/codex/chat/completions`、隐藏了 deployment，或者要求 `Ocp-Apim-Subscription-Key` 而不是 `api-key`，则不能直接猜这些字段，需要按实际 APIM operation 调整 Worker 适配器或 APIM policy。
+模型通过请求 body 的 `model` 字段发送；该 v1 operation 不使用 `api-version` query parameter。如果 APIM 使用其他 URL template 或 subscription key header，需要同步调整 Worker 适配器。
 
 ### 当前 `ai-gateway-peterwang` 实测配置
 
-2026-08-22 通过 Azure CLI 和最小 data-plane 请求验证：
+2026-08-24 通过 Azure CLI 和最小 data-plane 请求验证：
 
 | GitHub 配置 | 应填写的值 |
 |---|---|
 | `APIM_BASE_URL` | `https://ai-gateway-peterwang.azure-api.net/wangpeter-2401-ai-resource` |
-| `APIM_DEPLOYMENT` | `gpt-5.4-mini` |
-| `APIM_API_VERSION` | `2024-10-21` |
+| `APIM_DEPLOYMENT` | `gpt-5.5` |
 | `APIM_API_KEY` | APIM active subscription 的 primary 或 secondary key；不要填写 Azure AI 后端 key |
 
-`gpt-5.4-mini` 使用 `2024-10-21` 和 Worker 的完整请求参数（包括 JSON response format）直连后端实测返回 HTTP 200。稳定版本优先于同样可用的 preview 版本。
+`gpt-5.5` 通过 `/openai/v1/chat/completions` 和 JSON response format 实测返回 HTTP 200。该模型不接受 `temperature: 0.2`，Worker 已省略此参数。
 
 APIM API 当前配置为：
 
 - API ID/path：`wangpeter-2401-ai-resource`；
 - subscription key header：`api-key`；
+- Chat Completions operation：`POST /openai/v1/chat/completions`；
 - backend entity：`wangpeter-2401-ai-resource`；
 - backend URL：`https://wangpeter-2401-ai-resource.services.ai.azure.com/`。
 
-但 API 级 Backend URL 为空，且 API policy 尚未关联 backend entity，因此通过 APIM 实测返回 HTTP 500。部署 ReviewPilot 前，应在 APIM 的该 API → **Design** → **All operations** → **Inbound processing** 中加入 backend 绑定，或在 policy editor 使用：
-
-```xml
-<policies>
-	<inbound>
-		<base />
-		<set-backend-service backend-id="wangpeter-2401-ai-resource" />
-	</inbound>
-	<backend>
-		<base />
-	</backend>
-	<outbound>
-		<base />
-	</outbound>
-	<on-error>
-		<base />
-	</on-error>
-</policies>
-```
-
-保存后在 APIM Test 页面或使用以下 URL 验证不再返回 500：
+当前 APIM 路由和后端已可用。可在 APIM Test 页面使用以下 operation 验证：
 
 ```text
-POST https://ai-gateway-peterwang.azure-api.net/wangpeter-2401-ai-resource/openai/deployments/gpt-5.4-mini/chat/completions?api-version=2024-10-21
+POST https://ai-gateway-peterwang.azure-api.net/wangpeter-2401-ai-resource/openai/v1/chat/completions
 ```
 
 ## Bicep 自动创建的资源

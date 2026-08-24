@@ -1,4 +1,8 @@
 import { AiSummarySchema, type AiSummary } from "@employee-review/domain";
+import { z } from "zod";
+
+const AI_SUMMARY_JSON_SCHEMA = z.toJSONSchema(AiSummarySchema);
+delete AI_SUMMARY_JSON_SCHEMA.$schema;
 
 export interface AiSummaryInput {
   snapshot: unknown;
@@ -12,7 +16,6 @@ interface ApimAiConfig {
   baseUrl: string;
   apiKey: string;
   deployment: string;
-  apiVersion: string;
   timeoutMs?: number;
 }
 
@@ -52,12 +55,9 @@ export class ApimAiProvider implements AiSummaryProvider {
     const baseUrl = this.config.baseUrl.endsWith("/")
       ? this.config.baseUrl
       : `${this.config.baseUrl}/`;
-    const url = new URL(
-      `openai/deployments/${encodeURIComponent(this.config.deployment)}/chat/completions`,
-      baseUrl,
-    );
-    url.searchParams.set("api-version", this.config.apiVersion);
+    const url = new URL("openai/v1/chat/completions", baseUrl);
     const requestBody = {
+      model: this.config.deployment,
       messages: [
         {
           role: "system",
@@ -70,8 +70,14 @@ export class ApimAiProvider implements AiSummaryProvider {
         },
         { role: "user", content: JSON.stringify(input.snapshot) },
       ],
-      response_format: { type: "json_object" },
-      temperature: 0.2,
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "employee_review_summary",
+          strict: true,
+          schema: AI_SUMMARY_JSON_SCHEMA,
+        },
+      },
     };
 
     for (let attempt = 0; attempt < 2; attempt += 1) {

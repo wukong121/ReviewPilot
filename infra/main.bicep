@@ -24,7 +24,6 @@ var secretNames = {
   'apim-base-url': 'apim-base-url'
   'apim-api-key': 'apim-api-key'
   'apim-deployment': 'apim-deployment'
-  'apim-api-version': 'apim-api-version'
   'acs-email-endpoint': 'acs-email-endpoint'
   'acs-email-sender': 'acs-email-sender'
   'public-base-url': 'public-base-url'
