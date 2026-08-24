@@ -4,6 +4,7 @@ param workspaceId string
 param registryServer string
 param identityId string
 param identityClientId string
+param infrastructureSubnetId string
 param webImage string
 param workerImage string
 param keyVaultUri string
@@ -20,6 +21,9 @@ resource environment 'Microsoft.App/managedEnvironments@2024-03-01' = {
   location: location
   tags: tags
   properties: {
+    vnetConfiguration: {
+      infrastructureSubnetId: infrastructureSubnetId
+    }
     appLogsConfiguration: {
       destination: 'log-analytics'
       logAnalyticsConfiguration: {

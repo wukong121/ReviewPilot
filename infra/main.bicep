@@ -71,6 +71,16 @@ module keyVault 'modules/key-vault.bicep' = {
   }
 }
 
+module networking 'modules/networking.bicep' = {
+  name: 'networking'
+  params: {
+    location: location
+    prefix: prefix
+    keyVaultId: keyVault.outputs.id
+    tags: tags
+  }
+}
+
 resource identity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
   name: '${prefix}-identity'
   location: location
@@ -121,6 +131,7 @@ module containerApps 'modules/container-apps.bicep' = {
     registryServer: registry.outputs.loginServer
     identityId: identity.id
     identityClientId: identity.properties.clientId
+    infrastructureSubnetId: networking.outputs.containerAppsSubnetId
     webImage: '${registry.outputs.loginServer}/reviewpilot-web:${imageTag}'
     workerImage: '${registry.outputs.loginServer}/reviewpilot-worker:${imageTag}'
     keyVaultUri: keyVault.outputs.uri
