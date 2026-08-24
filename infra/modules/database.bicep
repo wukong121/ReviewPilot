@@ -15,7 +15,6 @@ resource server 'Microsoft.DBforPostgreSQL/flexibleServers@2024-08-01' = {
     version: '16'
     administratorLogin: administratorLogin
     administratorLoginPassword: administratorPassword
-    availabilityZone: '1'
     authConfig: { activeDirectoryAuth: 'Disabled', passwordAuth: 'Enabled' }
     backup: { backupRetentionDays: 14, geoRedundantBackup: 'Disabled' }
     highAvailability: { mode: highAvailability ? 'ZoneRedundant' : 'Disabled' }
