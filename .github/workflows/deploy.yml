@@ -123,8 +123,8 @@ jobs:
           POSTGRES_SERVER=$(jq -r '.postgresServerName.value' deployment-outputs.json)
           RUNNER_IP=$(curl --fail --silent https://api.ipify.org)
           RULE_NAME="github-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          az postgres flexible-server firewall-rule create --resource-group "$RESOURCE_GROUP" --name "$POSTGRES_SERVER" --rule-name "$RULE_NAME" --start-ip-address "$RUNNER_IP" --end-ip-address "$RUNNER_IP" --output none
-          trap 'az postgres flexible-server firewall-rule delete --resource-group "$RESOURCE_GROUP" --name "$POSTGRES_SERVER" --rule-name "$RULE_NAME" --yes --output none' EXIT
+          az postgres flexible-server firewall-rule create --resource-group "$RESOURCE_GROUP" --server-name "$POSTGRES_SERVER" --name "$RULE_NAME" --start-ip-address "$RUNNER_IP" --end-ip-address "$RUNNER_IP" --output none
+          trap 'az postgres flexible-server firewall-rule delete --resource-group "$RESOURCE_GROUP" --server-name "$POSTGRES_SERVER" --name "$RULE_NAME" --yes --output none' EXIT
           ENCODED_PASSWORD=$(node -p "encodeURIComponent(process.env.POSTGRES_ADMIN_PASSWORD)")
           POSTGRES_FQDN=$(jq -r '.postgresFqdn.value' deployment-outputs.json)
           DATABASE_URL="postgresql://reviewpilotadmin:${ENCODED_PASSWORD}@${POSTGRES_FQDN}:5432/reviewpilot?sslmode=require&schema=public"
