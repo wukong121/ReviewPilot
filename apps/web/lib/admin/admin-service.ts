@@ -36,6 +36,10 @@ export async function authorizeUser(input: {
         roles: { deleteMany: {}, create: [...new Set(input.roles)].map((role) => ({ role })) },
       },
     });
+    await tx.employeeManager.updateMany({
+      where: { employeeId: user.id, effectiveTo: null },
+      data: { effectiveTo: new Date() },
+    });
     if (input.managerId) {
       const manager = await tx.user.findFirst({
         where: {
@@ -48,10 +52,6 @@ export async function authorizeUser(input: {
       if (!manager) {
         throw Object.assign(new Error("approver must be an active manager"), { status: 409 });
       }
-      await tx.employeeManager.updateMany({
-        where: { employeeId: user.id, effectiveTo: null },
-        data: { effectiveTo: new Date() },
-      });
       await tx.employeeManager.create({
         data: { employeeId: user.id, managerId: input.managerId, effectiveFrom: new Date() },
       });
@@ -88,6 +88,30 @@ export async function createTemplate(input: { name: string; definition: Template
       data: { actorId: actor.id, action: "TEMPLATE_CREATED", entityType: "Template", entityId: template.id, metadataJson: { versionId: version.id } },
     });
     return { template, version };
+  });
+}
+
+export async function saveTemplateDraft(templateId: string, input: { name: string; definition: TemplateDefinition }, actor: AdminActor) {
+  const definition = TemplateDefinitionSchema.parse(input.definition);
+  return prisma.$transaction(async (tx) => {
+    const template = await tx.template.findUnique({
+      where: { id: templateId },
+      include: { versions: { orderBy: { version: "desc" }, take: 1 } },
+    });
+    if (!template) throw Object.assign(new Error("template not found"), { status: 404 });
+
+    const latest = template.versions[0];
+    const version = latest?.status === TemplateStatus.DRAFT ? latest.version : (latest?.version ?? 0) + 1;
+    const schemaJson = { ...definition, version } as unknown as Prisma.InputJsonObject;
+    const draft = latest?.status === TemplateStatus.DRAFT
+      ? await tx.templateVersion.update({ where: { id: latest.id }, data: { schemaJson } })
+      : await tx.templateVersion.create({ data: { templateId, version, schemaJson } });
+
+    await tx.template.update({ where: { id: templateId }, data: { name: input.name, status: TemplateStatus.DRAFT } });
+    await tx.auditEvent.create({
+      data: { actorId: actor.id, action: "TEMPLATE_DRAFT_SAVED", entityType: "TemplateVersion", entityId: draft.id, metadataJson: { version } },
+    });
+    return draft;
   });
 }
 

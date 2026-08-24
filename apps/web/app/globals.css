@@ -29,7 +29,7 @@ th, td { padding: 14px 16px; border-bottom: 1px solid var(--line); text-align: l
 th { color: #43515d; background: #eef3f4; font-size: .82rem; text-transform: uppercase; }
 tbody tr:hover { background: #f3f8fa; }
 textarea { width: 100%; min-height: 110px; resize: vertical; }
-select, textarea, input[type="text"], input[type="email"] { border: 1px solid #a9b6bf; border-radius: 5px; background: white; padding: 10px 12px; color: var(--ink); }
+select, textarea, input[type="text"], input[type="email"], input[type="date"], input[type="datetime-local"] { border: 1px solid #a9b6bf; border-radius: 5px; background: white; padding: 10px 12px; color: var(--ink); }
 
 .skip-link { position: fixed; z-index: 100; top: 8px; left: 8px; transform: translateY(-150%); padding: 10px 14px; border-radius: 4px; color: white; background: var(--ink); }
 .skip-link:focus { transform: translateY(0); }
@@ -64,6 +64,24 @@ select, textarea, input[type="text"], input[type="email"] { border: 1px solid #a
 .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); }
 .empty-state, .notice { border-left: 4px solid var(--teal); padding: 16px 20px; background: #eaf5f2; }
 .error-message { border-left: 4px solid var(--coral); padding: 12px 15px; color: #7c271e; background: #fff0ed; }
+.admin-panel { margin-bottom: 24px; border: 1px solid var(--line); border-radius: 7px; padding: 22px; background: var(--surface); }
+.admin-panel .section-heading p { margin-bottom: 14px; color: var(--muted); }
+.admin-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; align-items: end; }
+.admin-form > label, .template-editor > label { display: grid; gap: 7px; color: #43515d; font-size: .82rem; font-weight: 700; }
+.admin-form fieldset { min-width: 0; margin: 0; border: 1px solid var(--line); border-radius: 5px; padding: 8px 12px; }
+.admin-form legend { padding: 0 5px; color: #43515d; font-size: .82rem; font-weight: 700; }
+.admin-form .button-row { grid-column: 1 / -1; }
+.role-options { display: flex; flex-wrap: wrap; gap: 12px; }
+.role-options .check-row { padding: 3px 0; }
+.compact-button { min-height: 34px; padding: 5px 10px; font-size: .8rem; }
+.admin-split { display: grid; grid-template-columns: minmax(210px, .4fr) minmax(0, 1.6fr); gap: 20px; align-items: start; }
+.admin-list { display: grid; gap: 7px; }
+.admin-list > button:not(.secondary-button) { display: grid; gap: 4px; border: 1px solid var(--line); border-radius: 5px; padding: 12px; text-align: left; color: var(--ink); background: white; cursor: pointer; }
+.admin-list > button.selected { border-color: var(--teal); background: #eaf5f2; }
+.admin-list span { color: var(--muted); font-size: .75rem; }
+.template-editor { margin: 0; }
+.template-editor > label + label { margin-top: 16px; }
+.json-editor { min-height: 520px; font-family: "Cascadia Mono", "SFMono-Regular", monospace; font-size: .78rem; line-height: 1.55; }
 
 .destination-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
 .destination { display: grid; grid-template-columns: 32px 1fr auto; min-height: 120px; align-items: center; gap: 14px; border: 1px solid var(--line); border-radius: 8px; padding: 20px; color: var(--ink); background: var(--surface); text-decoration: none; box-shadow: 0 7px 22px rgba(28, 57, 67, .06); }
@@ -129,6 +147,7 @@ select, textarea, input[type="text"], input[type="email"] { border: 1px solid #a
   .brand-mark { width: 32px; height: 32px; }
   .destination-grid { grid-template-columns: 1fr; }
   .detail-grid { grid-template-columns: 1fr; }
+  .admin-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .detail-grid aside { position: static; }
   .kpi-grid { grid-template-columns: repeat(3, 1fr); }
 }
@@ -138,6 +157,7 @@ select, textarea, input[type="text"], input[type="email"] { border: 1px solid #a
   .page-container { width: min(100% - 28px, 1180px); padding-top: 26px; }
   .page-header { align-items: flex-start; flex-direction: column; }
   .review-card { align-items: flex-start; flex-direction: column; }
+  .admin-form, .admin-split { grid-template-columns: 1fr; }
   .review-layout { grid-template-columns: 1fr; }
   .section-nav { position: static; grid-auto-flow: column; grid-auto-columns: max-content; overflow-x: auto; border-left: 0; border-bottom: 1px solid var(--line); }
   .review-sections > section, .summary-panel, .approval-panel { padding: 18px 15px; }
