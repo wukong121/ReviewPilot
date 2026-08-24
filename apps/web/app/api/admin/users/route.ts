@@ -6,8 +6,9 @@ import { errorResponse } from "../../../../lib/http/error-response";
 
 const UserSchema = z.object({
   id: z.string().uuid().optional(),
-  entraObjectId: z.string().uuid(), email: z.string().email(), displayName: z.string().trim().min(1),
+  email: z.string().email(), displayName: z.string().trim().optional(),
   roles: z.array(z.enum(["EMPLOYEE", "MANAGER", "ADMIN"])).min(1), managerId: z.string().uuid().optional(),
+  resetEntraBinding: z.boolean().optional(),
 });
 
 export async function GET(): Promise<Response> { try { await requirePermission("admin:manage-users"); return Response.json(await listUsers()); } catch (error) { return errorResponse(error); } }

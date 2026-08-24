@@ -213,6 +213,10 @@ Secret Value 只显示一次，不得写入仓库、Issue、聊天或文档。de
 
 系统只在数据库中尚无 ACTIVE 管理员时使用该列表。首位管理员登录后，应在 ReviewPilot 管理页面维护其他用户、角色和审批经理关系。
 
+普通员工和经理不需要管理员收集 Object ID。在 **用户与角色** 页面填写公司邮箱并分配角色即可，姓名可以留空；用户首次通过当前 tenant 的 Entra SSO 登录时，系统会用 token 中的邮箱匹配预授权记录，更新 Entra 显示名称，并一次性绑定不可变的 Entra Object ID。后续登录只按该 Object ID 识别，不能用相同邮箱改绑其他账号。
+
+如果历史记录绑定了错误的 Object ID，编辑该用户并选择 **重置 SSO 绑定**，再让用户本人重新登录。不要为普通用户修改 `BOOTSTRAP_ADMIN_OBJECT_IDS`；它只用于系统中尚无管理员时的首次引导。
+
 ### 6. 最终需要填写的值
 
 在 GitHub `dev` 或 `prod` Environment 中填写：

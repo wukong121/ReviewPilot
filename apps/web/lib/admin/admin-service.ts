@@ -15,46 +15,45 @@ export async function listUsers() {
 
 export async function authorizeUser(input: {
   id?: string;
-  entraObjectId: string;
   email: string;
-  displayName: string;
+  displayName?: string;
   roles: Role[];
   managerId?: string;
+  resetEntraBinding?: boolean;
 }, actor: AdminActor) {
   return prisma.$transaction(async (tx) => {
     const email = input.email.toLowerCase();
+    const displayName = input.displayName?.trim() || email.split("@")[0];
     const target = input.id
       ? await tx.user.findUnique({ where: { id: input.id }, select: { id: true } })
-      : await tx.user.findUnique({ where: { entraObjectId: input.entraObjectId }, select: { id: true } });
+      : await tx.user.findUnique({ where: { email }, select: { id: true } });
     if (input.id && !target) {
       throw Object.assign(new Error("user not found"), { status: 404 });
     }
     const conflict = await tx.user.findFirst({
       where: {
-        OR: [{ entraObjectId: input.entraObjectId }, { email }],
+        email,
         ...(target ? { NOT: { id: target.id } } : {}),
       },
-      select: { entraObjectId: true, email: true },
+      select: { email: true },
     });
     if (conflict) {
-      const field = conflict.entraObjectId === input.entraObjectId ? "Entra Object ID" : "email";
-      throw Object.assign(new Error(`${field} already belongs to another user`), { status: 409 });
+      throw Object.assign(new Error("email already belongs to another user"), { status: 409 });
     }
 
     const data = {
-      entraObjectId: input.entraObjectId,
       email,
-      displayName: input.displayName,
+      displayName,
       status: UserStatus.ACTIVE,
+      ...(input.resetEntraBinding ? { entraObjectId: null } : {}),
       roles: { deleteMany: {}, create: [...new Set(input.roles)].map((role) => ({ role })) },
     };
     const user = target
       ? await tx.user.update({ where: { id: target.id }, data })
       : await tx.user.create({
         data: {
-          entraObjectId: input.entraObjectId,
           email,
-          displayName: input.displayName,
+          displayName,
           roles: { create: [...new Set(input.roles)].map((role) => ({ role })) },
         },
       });
@@ -84,7 +83,7 @@ export async function authorizeUser(input: {
         action: "USER_AUTHORIZED",
         entityType: "User",
         entityId: user.id,
-        metadataJson: { roles: input.roles, managerId: input.managerId ?? null },
+        metadataJson: { roles: input.roles, managerId: input.managerId ?? null, resetEntraBinding: input.resetEntraBinding ?? false },
       },
     });
     return user;

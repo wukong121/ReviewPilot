@@ -1,0 +1,1 @@
+ALTER TABLE "User" ALTER COLUMN "entraObjectId" DROP NOT NULL;

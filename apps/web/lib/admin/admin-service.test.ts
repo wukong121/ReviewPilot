@@ -37,10 +37,9 @@ describe("authorizeUser", () => {
     tx.auditEvent.create.mockResolvedValue({ id: "audit-1" });
   });
 
-  it("updates the existing database user when the Entra Object ID changes", async () => {
+  it("updates the existing database user by stable record ID", async () => {
     await authorizeUser({
       id: "user-1",
-      entraObjectId: "212a9c74-1c01-42fa-94de-6865e82faf80",
       email: "MengHanGuo@Microsoft.com",
       displayName: "Meng Han Guo",
       roles: ["EMPLOYEE"],
@@ -49,22 +48,33 @@ describe("authorizeUser", () => {
     expect(tx.user.update).toHaveBeenCalledWith(expect.objectContaining({
       where: { id: "user-1" },
       data: expect.objectContaining({
-        entraObjectId: "212a9c74-1c01-42fa-94de-6865e82faf80",
         email: "menghanguo@microsoft.com",
       }),
     }));
     expect(tx.user.create).not.toHaveBeenCalled();
   });
 
+  it("clears an incorrect SSO binding when requested", async () => {
+    await authorizeUser({
+      id: "user-1",
+      email: "menghanguo@microsoft.com",
+      displayName: "Meng Han Guo",
+      roles: ["EMPLOYEE"],
+      resetEntraBinding: true,
+    }, { id: "admin-1" });
+
+    expect(tx.user.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ entraObjectId: null }),
+    }));
+  });
+
   it("returns a conflict when an identifier belongs to another user", async () => {
     tx.user.findFirst.mockResolvedValue({
-      entraObjectId: "another-object-id",
       email: "menghanguo@microsoft.com",
     });
 
     await expect(authorizeUser({
       id: "user-1",
-      entraObjectId: "212a9c74-1c01-42fa-94de-6865e82faf80",
       email: "menghanguo@microsoft.com",
       displayName: "Meng Han Guo",
       roles: ["EMPLOYEE"],

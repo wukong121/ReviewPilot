@@ -1,15 +1,17 @@
-import { Role, UserStatus } from "@employee-review/db";
+import { UserStatus } from "@employee-review/db";
 import NextAuth, { customFetch } from "next-auth";
 import MicrosoftEntraID from "next-auth/providers/microsoft-entra-id";
 import { z } from "zod";
 
 import { prisma } from "@employee-review/db";
 import { createEntraCertificateFetch } from "./lib/auth/entra-certificate";
+import { resolveAuthenticatedUser } from "./lib/auth/resolve-user";
 
 const EntraProfileSchema = z.object({
   oid: z.string().uuid(),
   tid: z.string().uuid(),
   name: z.string().min(1).optional(),
+  email: z.string().email().optional(),
   preferred_username: z.string().email(),
 });
 
@@ -54,39 +56,6 @@ const bootstrapObjectIds = new Set(
     .filter(Boolean),
 );
 
-async function findOrBootstrapUser(profile: z.infer<typeof EntraProfileSchema>) {
-  const existing = await prisma.user.findUnique({
-    where: { entraObjectId: profile.oid },
-    include: { roles: true },
-  });
-  if (existing?.status === UserStatus.ACTIVE) {
-    return existing;
-  }
-  if (existing || !bootstrapObjectIds.has(profile.oid.toLowerCase())) {
-    return null;
-  }
-
-  return prisma.$transaction(async (tx) => {
-    const activeAdmin = await tx.user.findFirst({
-      where: { status: UserStatus.ACTIVE, roles: { some: { role: Role.ADMIN } } },
-      select: { id: true },
-    });
-    if (activeAdmin) {
-      return null;
-    }
-
-    return tx.user.create({
-      data: {
-        entraObjectId: profile.oid,
-        email: profile.preferred_username.toLowerCase(),
-        displayName: profile.name ?? profile.preferred_username,
-        roles: { create: [{ role: Role.ADMIN }, { role: Role.EMPLOYEE }] },
-      },
-      include: { roles: true },
-    });
-  });
-}
-
 export const { handlers, auth, signIn, signOut } = NextAuth({
   secret: productionValue("AUTH_SECRET"),
   providers: [entraProvider],
@@ -98,7 +67,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (!parsed.success || parsed.data.tid.toLowerCase() !== tenantId.toLowerCase()) {
         return false;
       }
-      return (await findOrBootstrapUser(parsed.data)) !== null;
+      return (await resolveAuthenticatedUser(parsed.data, bootstrapObjectIds)) !== null;
     },
     async jwt({ token, profile }) {
       if (!profile && token.userId) {
@@ -122,8 +91,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (!parsed.success) {
         return token;
       }
-      const localUser = await findOrBootstrapUser(parsed.data);
-      if (localUser) {
+      const localUser = await resolveAuthenticatedUser(parsed.data, bootstrapObjectIds);
+      if (localUser?.entraObjectId) {
         token.userId = localUser.id;
         token.entraObjectId = localUser.entraObjectId;
         token.roles = localUser.roles.map(({ role }) => role);
