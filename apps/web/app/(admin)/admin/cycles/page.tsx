@@ -1,0 +1,4 @@
+import { redirect } from "next/navigation";
+import { auth } from "../../../../auth";
+import { listCycles } from "../../../../lib/admin/admin-service";
+export default async function AdminCyclesPage() { const session = await auth(); if (!session?.user.roles.includes("ADMIN")) redirect("/unauthorized"); const cycles = await listCycles(); return <main className="page-container"><header className="page-header"><div><span className="eyebrow">系统管理</span><h1>评审周期</h1></div></header><div className="table-wrap"><table><thead><tr><th>周期</th><th>模板</th><th>日期</th><th>状态</th><th>参与人数</th></tr></thead><tbody>{cycles.map((cycle) => <tr key={cycle.id}><td>{cycle.name}</td><td>{cycle.templateVersion.template.name} v{cycle.templateVersion.version}</td><td>{cycle.periodStart.toLocaleDateString("zh-CN")} - {cycle.periodEnd.toLocaleDateString("zh-CN")}</td><td><span className="status-badge">{cycle.status}</span></td><td>{cycle._count.reviews}</td></tr>)}</tbody></table></div></main>; }

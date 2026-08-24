@@ -1,0 +1,280 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  EMPLOYEE
+  MANAGER
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum TemplateStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum CycleStatus {
+  DRAFT
+  OPEN
+  CLOSED
+  ARCHIVED
+}
+
+enum ReviewVersionStatus {
+  DRAFT
+  REVISION_DRAFT
+  AI_PROCESSING
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+}
+
+enum ApprovalDecision {
+  APPROVED
+  REJECTED
+}
+
+enum JobType {
+  GENERATE_AI_SUMMARY
+  SEND_MANAGER_SUMMARY
+  SEND_APPROVED
+  SEND_REJECTED
+  SEND_ADMIN_ALERT
+}
+
+enum JobStatus {
+  QUEUED
+  PROCESSING
+  SUCCEEDED
+  RETRY_WAIT
+  DEAD
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+enum NotificationType {
+  MANAGER_SUMMARY
+  REVIEW_APPROVED
+  REVIEW_REJECTED
+  ADMIN_JOB_ALERT
+}
+
+model User {
+  id                 String            @id @default(uuid()) @db.Uuid
+  entraObjectId      String            @unique @db.Uuid
+  email              String            @unique
+  displayName        String
+  status             UserStatus        @default(ACTIVE)
+  createdAt          DateTime          @default(now()) @db.Timestamptz(6)
+  updatedAt          DateTime          @updatedAt @db.Timestamptz(6)
+  roles              UserRole[]
+  employeeManagers   EmployeeManager[] @relation("Employee")
+  managerAssignments EmployeeManager[] @relation("Manager")
+  employeeReviews    Review[]          @relation("ReviewEmployee")
+  approverReviews    Review[]          @relation("ReviewApprover")
+  approvals          Approval[]
+  auditEvents        AuditEvent[]
+}
+
+model UserRole {
+  userId String @db.Uuid
+  role   Role
+  user   User   @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@id([userId, role])
+}
+
+model EmployeeManager {
+  id            String    @id @default(uuid()) @db.Uuid
+  employeeId    String    @db.Uuid
+  managerId     String    @db.Uuid
+  effectiveFrom DateTime  @db.Timestamptz(6)
+  effectiveTo   DateTime? @db.Timestamptz(6)
+  employee      User      @relation("Employee", fields: [employeeId], references: [id], onDelete: Restrict)
+  manager       User      @relation("Manager", fields: [managerId], references: [id], onDelete: Restrict)
+
+  @@unique([employeeId, effectiveFrom])
+  @@index([managerId, effectiveTo])
+}
+
+model Template {
+  id        String            @id @default(uuid()) @db.Uuid
+  name      String
+  status    TemplateStatus    @default(DRAFT)
+  createdAt DateTime          @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime          @updatedAt @db.Timestamptz(6)
+  versions  TemplateVersion[]
+}
+
+model TemplateVersion {
+  id          String         @id @default(uuid()) @db.Uuid
+  templateId  String         @db.Uuid
+  version     Int
+  status      TemplateStatus @default(DRAFT)
+  schemaJson  Json
+  publishedAt DateTime?      @db.Timestamptz(6)
+  createdAt   DateTime       @default(now()) @db.Timestamptz(6)
+  template    Template       @relation(fields: [templateId], references: [id], onDelete: Restrict)
+  cycles      ReviewCycle[]
+
+  @@unique([templateId, version])
+}
+
+model ReviewCycle {
+  id                String          @id @default(uuid()) @db.Uuid
+  name              String
+  templateVersionId String          @db.Uuid
+  periodStart       DateTime        @db.Date
+  periodEnd         DateTime        @db.Date
+  opensAt           DateTime        @db.Timestamptz(6)
+  dueAt             DateTime        @db.Timestamptz(6)
+  status            CycleStatus     @default(DRAFT)
+  createdAt         DateTime        @default(now()) @db.Timestamptz(6)
+  updatedAt         DateTime        @updatedAt @db.Timestamptz(6)
+  templateVersion   TemplateVersion @relation(fields: [templateVersionId], references: [id], onDelete: Restrict)
+  reviews           Review[]
+
+  @@index([status, dueAt])
+}
+
+model Review {
+  id                String          @id @default(uuid()) @db.Uuid
+  cycleId           String          @db.Uuid
+  employeeId        String          @db.Uuid
+  approverManagerId String          @db.Uuid
+  currentVersionId  String?         @db.Uuid
+  createdAt         DateTime        @default(now()) @db.Timestamptz(6)
+  updatedAt         DateTime        @updatedAt @db.Timestamptz(6)
+  cycle             ReviewCycle     @relation(fields: [cycleId], references: [id], onDelete: Restrict)
+  employee          User            @relation("ReviewEmployee", fields: [employeeId], references: [id], onDelete: Restrict)
+  approverManager   User            @relation("ReviewApprover", fields: [approverManagerId], references: [id], onDelete: Restrict)
+  versions          ReviewVersion[]
+
+  @@unique([cycleId, employeeId])
+  @@index([approverManagerId])
+  @@index([currentVersionId])
+}
+
+model ReviewVersion {
+  id                    String              @id @default(uuid()) @db.Uuid
+  reviewId              String              @db.Uuid
+  version               Int
+  status                ReviewVersionStatus @default(DRAFT)
+  immutableSnapshotJson Json?
+  submittedAt           DateTime?           @db.Timestamptz(6)
+  lockVersion           Int                 @default(0)
+  createdAt             DateTime            @default(now()) @db.Timestamptz(6)
+  updatedAt             DateTime            @updatedAt @db.Timestamptz(6)
+  review                Review              @relation(fields: [reviewId], references: [id], onDelete: Restrict)
+  answers               ReviewAnswer[]
+  computedScore         ComputedScore?
+  aiSummary             AiSummary?
+  approval              Approval?
+
+  @@unique([reviewId, version])
+  @@index([status])
+}
+
+model ReviewAnswer {
+  id              String        @id @default(uuid()) @db.Uuid
+  reviewVersionId String        @db.Uuid
+  questionId      String
+  numericValue    Int?
+  booleanValue    Boolean?
+  textValue       String?
+  reviewVersion   ReviewVersion @relation(fields: [reviewVersionId], references: [id], onDelete: Restrict)
+
+  @@unique([reviewVersionId, questionId])
+}
+
+model ComputedScore {
+  id                  String        @id @default(uuid()) @db.Uuid
+  reviewVersionId     String        @unique @db.Uuid
+  dimensionScoresJson Json
+  weightedScore       Decimal       @db.Decimal(3, 1)
+  capabilityAverage   Decimal       @db.Decimal(3, 1)
+  behaviorCount       Int
+  createdAt           DateTime      @default(now()) @db.Timestamptz(6)
+  reviewVersion       ReviewVersion @relation(fields: [reviewVersionId], references: [id], onDelete: Restrict)
+}
+
+model AiSummary {
+  id              String        @id @default(uuid()) @db.Uuid
+  reviewVersionId String        @unique @db.Uuid
+  schemaVersion   String
+  promptVersion   String
+  modelId         String
+  summaryJson     Json
+  createdAt       DateTime      @default(now()) @db.Timestamptz(6)
+  reviewVersion   ReviewVersion @relation(fields: [reviewVersionId], references: [id], onDelete: Restrict)
+}
+
+model Approval {
+  id              String           @id @default(uuid()) @db.Uuid
+  reviewVersionId String           @unique @db.Uuid
+  managerId       String           @db.Uuid
+  decision        ApprovalDecision
+  comment         String
+  decidedAt       DateTime         @default(now()) @db.Timestamptz(6)
+  reviewVersion   ReviewVersion    @relation(fields: [reviewVersionId], references: [id], onDelete: Restrict)
+  manager         User             @relation(fields: [managerId], references: [id], onDelete: Restrict)
+}
+
+model BackgroundJob {
+  id             String         @id @default(uuid()) @db.Uuid
+  type           JobType
+  idempotencyKey String         @unique
+  payloadJson    Json
+  status         JobStatus      @default(QUEUED)
+  attempts       Int            @default(0)
+  runAfter       DateTime       @default(now()) @db.Timestamptz(6)
+  lockedAt       DateTime?      @db.Timestamptz(6)
+  lastErrorCode  String?
+  createdAt      DateTime       @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime       @updatedAt @db.Timestamptz(6)
+  notifications  Notification[]
+
+  @@index([status, runAfter])
+}
+
+model Notification {
+  id             String             @id @default(uuid()) @db.Uuid
+  jobId          String             @db.Uuid
+  idempotencyKey String             @unique
+  recipient      String
+  type           NotificationType
+  status         NotificationStatus @default(PENDING)
+  sentAt         DateTime?          @db.Timestamptz(6)
+  createdAt      DateTime           @default(now()) @db.Timestamptz(6)
+  job            BackgroundJob      @relation(fields: [jobId], references: [id], onDelete: Restrict)
+}
+
+model AuditEvent {
+  id            String   @id @default(uuid()) @db.Uuid
+  actorId       String?  @db.Uuid
+  action        String
+  entityType    String
+  entityId      String
+  metadataJson  Json
+  correlationId String?
+  createdAt     DateTime @default(now()) @db.Timestamptz(6)
+  actor         User?    @relation(fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([entityType, entityId, createdAt])
+  @@index([actorId, createdAt])
+}

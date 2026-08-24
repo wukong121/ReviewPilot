@@ -1,0 +1,140 @@
+name: Deploy employee review
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        type: choice
+        options: [dev, prod]
+        required: true
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: reviewpilot-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run generate -w @employee-review/db
+        env:
+          DATABASE_URL: postgresql://build:build@localhost:5432/build
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npx playwright install --with-deps chromium
+      - run: npm run e2e
+      - run: npm run build
+
+  deploy:
+    needs: verify
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    env:
+      RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
+      POSTGRES_ADMIN_PASSWORD: ${{ secrets.POSTGRES_ADMIN_PASSWORD }}
+      AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
+      ENTRA_TENANT_ID: ${{ vars.ENTRA_TENANT_ID }}
+      ENTRA_CLIENT_ID: ${{ vars.ENTRA_CLIENT_ID }}
+      ENTRA_CLIENT_SECRET: ${{ secrets.ENTRA_CLIENT_SECRET }}
+      BOOTSTRAP_ADMIN_OBJECT_IDS: ${{ vars.BOOTSTRAP_ADMIN_OBJECT_IDS }}
+      APIM_BASE_URL: ${{ vars.APIM_BASE_URL }}
+      APIM_API_KEY: ${{ secrets.APIM_API_KEY }}
+      APIM_DEPLOYMENT: ${{ vars.APIM_DEPLOYMENT }}
+      APIM_API_VERSION: ${{ vars.APIM_API_VERSION }}
+      ACS_COMMUNICATION_SERVICE_NAME: ${{ vars.ACS_COMMUNICATION_SERVICE_NAME }}
+      ACS_EMAIL_ENDPOINT: ${{ vars.ACS_EMAIL_ENDPOINT }}
+      ACS_EMAIL_SENDER: ${{ vars.ACS_EMAIL_SENDER }}
+      PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
+      IMAGE_TAG: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Azure login with OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Bootstrap container registry
+        id: registry
+        run: |
+          az group create --name "$RESOURCE_GROUP" --location "$AZURE_LOCATION" --output none
+          REGISTRY=$(az deployment group create --resource-group "$RESOURCE_GROUP" --name "reviewpilot-registry-${{ inputs.environment }}" --template-file infra/modules/registry.bicep --parameters location="$AZURE_LOCATION" prefix="reviewpilot-${{ inputs.environment }}" --query properties.outputs.loginServer.value -o tsv)
+          echo "login_server=$REGISTRY" >> "$GITHUB_OUTPUT"
+          az acr login --name "$REGISTRY"
+      - name: Build and push Web image
+        run: |
+          docker build -f apps/web/Containerfile -t "${{ steps.registry.outputs.login_server }}/reviewpilot-web:$IMAGE_TAG" .
+          docker push "${{ steps.registry.outputs.login_server }}/reviewpilot-web:$IMAGE_TAG"
+      - name: Build and push Worker image
+        run: |
+          docker build -f apps/worker/Containerfile -t "${{ steps.registry.outputs.login_server }}/reviewpilot-worker:$IMAGE_TAG" .
+          docker push "${{ steps.registry.outputs.login_server }}/reviewpilot-worker:$IMAGE_TAG"
+      - name: Preview infrastructure changes
+        run: az deployment group what-if --resource-group "$RESOURCE_GROUP" --template-file infra/main.bicep --parameters "infra/environments/${{ inputs.environment }}.bicepparam" imageTag="$IMAGE_TAG"
+      - name: Deploy infrastructure
+        id: infrastructure
+        run: |
+          az deployment group create --resource-group "$RESOURCE_GROUP" --template-file infra/main.bicep --parameters "infra/environments/${{ inputs.environment }}.bicepparam" imageTag="$IMAGE_TAG" --query properties.outputs -o json > deployment-outputs.json
+          {
+            echo "registry=$(jq -r '.registryLoginServer.value' deployment-outputs.json)"
+            echo "web_fqdn=$(jq -r '.webFqdn.value' deployment-outputs.json)"
+            echo "static_ip=$(jq -r '.environmentStaticIp.value' deployment-outputs.json)"
+            echo "verification_token=$(jq -r '.domainVerificationToken.value' deployment-outputs.json)"
+            echo "managed_identity_client_id=$(jq -r '.managedIdentityClientId.value' deployment-outputs.json)"
+            echo "managed_identity_principal_id=$(jq -r '.managedIdentityPrincipalId.value' deployment-outputs.json)"
+          } >> "$GITHUB_OUTPUT"
+      - name: Publish DNS configuration
+        run: |
+          {
+            echo "## Custom domain DNS values"
+            echo ""
+            echo "Configure DNS only after this deployment has completed."
+            echo ""
+            echo "| Value | Deployment output |"
+            echo "|---|---|"
+            echo "| Container App default FQDN | \`${{ steps.infrastructure.outputs.web_fqdn }}\` |"
+            echo "| Container Apps environment static IP | \`${{ steps.infrastructure.outputs.static_ip }}\` |"
+            echo "| Domain verification TXT value | \`${{ steps.infrastructure.outputs.verification_token }}\` |"
+            echo "| Worker managed identity client ID | \`${{ steps.infrastructure.outputs.managed_identity_client_id }}\` |"
+            echo "| Worker managed identity principal ID | \`${{ steps.infrastructure.outputs.managed_identity_principal_id }}\` |"
+            echo ""
+            echo "For a subdomain such as \`reviews.company.com\`, create CNAME \`reviews\` to the default FQDN and TXT \`asuid.reviews\` with the verification value."
+            echo ""
+            echo "For an apex domain such as \`company.com\`, create A \`@\` to the static IP and TXT \`asuid\` with the verification value."
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Apply database migrations
+        run: |
+          POSTGRES_SERVER=$(jq -r '.postgresServerName.value' deployment-outputs.json)
+          RUNNER_IP=$(curl --fail --silent https://api.ipify.org)
+          RULE_NAME="github-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          az postgres flexible-server firewall-rule create --resource-group "$RESOURCE_GROUP" --name "$POSTGRES_SERVER" --rule-name "$RULE_NAME" --start-ip-address "$RUNNER_IP" --end-ip-address "$RUNNER_IP" --output none
+          trap 'az postgres flexible-server firewall-rule delete --resource-group "$RESOURCE_GROUP" --name "$POSTGRES_SERVER" --rule-name "$RULE_NAME" --yes --output none' EXIT
+          ENCODED_PASSWORD=$(node -p "encodeURIComponent(process.env.POSTGRES_ADMIN_PASSWORD)")
+          POSTGRES_FQDN=$(jq -r '.postgresFqdn.value' deployment-outputs.json)
+          DATABASE_URL="postgresql://reviewpilotadmin:${ENCODED_PASSWORD}@${POSTGRES_FQDN}:5432/reviewpilot?sslmode=require&schema=public"
+          export DATABASE_URL
+          npx prisma migrate deploy --schema packages/db/prisma/schema.prisma
+          npm run seed -w @employee-review/db
+      - name: Refresh Container Apps revisions
+        run: |
+          az containerapp update --resource-group "$RESOURCE_GROUP" --name "reviewpilot-${{ inputs.environment }}-web" --image "${{ steps.infrastructure.outputs.registry }}/reviewpilot-web:$IMAGE_TAG"
+          az containerapp update --resource-group "$RESOURCE_GROUP" --name "reviewpilot-${{ inputs.environment }}-worker" --image "${{ steps.infrastructure.outputs.registry }}/reviewpilot-worker:$IMAGE_TAG"
+      - name: Health check
+        run: curl --fail --retry 12 --retry-delay 10 --retry-all-errors "https://${{ steps.infrastructure.outputs.web_fqdn }}/api/health"

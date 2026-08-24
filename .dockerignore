@@ -1,0 +1,16 @@
+.git
+.github
+.next
+**/.next
+**/dist
+node_modules
+coverage
+docs
+e2e
+infra
+*.md
+*.docx
+.env*
+**/*.test.ts
+playwright-report
+test-results

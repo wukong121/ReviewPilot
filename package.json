@@ -1,0 +1,27 @@
+{
+  "name": "employee-review",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w @employee-review/web",
+    "build": "npm run build --workspaces --if-present",
+    "e2e": "playwright test",
+    "test": "vitest run --config vitest.workspace.ts",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.53.0",
+    "@types/node": "^26.2.0",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "^16.3.1",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.11"
+  }
+}

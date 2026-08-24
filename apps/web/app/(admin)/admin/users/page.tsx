@@ -1,0 +1,4 @@
+import { redirect } from "next/navigation";
+import { auth } from "../../../../auth";
+import { listUsers } from "../../../../lib/admin/admin-service";
+export default async function AdminUsersPage() { const session = await auth(); if (!session?.user.roles.includes("ADMIN")) redirect("/unauthorized"); const users = await listUsers(); return <main className="page-container"><header className="page-header"><div><span className="eyebrow">系统管理</span><h1>用户与角色</h1></div></header><div className="table-wrap"><table><thead><tr><th>用户</th><th>邮箱</th><th>角色</th><th>审批经理</th><th>状态</th></tr></thead><tbody>{users.map((user) => <tr key={user.id}><td>{user.displayName}</td><td>{user.email}</td><td>{user.roles.map(({ role }) => role).join(" / ")}</td><td>{user.employeeManagers[0]?.manager.displayName ?? "--"}</td><td>{user.status}</td></tr>)}</tbody></table></div></main>; }

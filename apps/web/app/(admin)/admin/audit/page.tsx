@@ -1,0 +1,4 @@
+import { redirect } from "next/navigation";
+import { auth } from "../../../../auth";
+import { listAuditEvents } from "../../../../lib/admin/job-service";
+export default async function AdminAuditPage() { const session = await auth(); if (!session?.user.roles.includes("ADMIN")) redirect("/unauthorized"); const events = await listAuditEvents({}); return <main className="page-container"><header className="page-header"><div><span className="eyebrow">运维中心</span><h1>审计日志</h1></div></header><div className="table-wrap"><table><thead><tr><th>时间</th><th>操作者</th><th>操作</th><th>实体</th></tr></thead><tbody>{events.items.map((event) => <tr key={event.id}><td>{event.createdAt.toLocaleString("zh-CN")}</td><td>{event.actor?.displayName ?? "系统"}</td><td>{event.action}</td><td>{event.entityType} / {event.entityId}</td></tr>)}</tbody></table></div></main>; }

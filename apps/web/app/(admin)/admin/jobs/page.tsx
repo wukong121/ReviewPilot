@@ -1,0 +1,4 @@
+import { redirect } from "next/navigation";
+import { auth } from "../../../../auth";
+import { listJobs } from "../../../../lib/admin/job-service";
+export default async function AdminJobsPage() { const session = await auth(); if (!session?.user.roles.includes("ADMIN")) redirect("/unauthorized"); const jobs = await listJobs(); return <main className="page-container"><header className="page-header"><div><span className="eyebrow">运维中心</span><h1>后台任务</h1></div></header><div className="table-wrap"><table><thead><tr><th>类型</th><th>状态</th><th>尝试</th><th>错误码</th><th>创建时间</th></tr></thead><tbody>{jobs.map((job) => <tr key={job.id}><td>{job.type}</td><td><span className="status-badge">{job.status}</span></td><td>{job.attempts}</td><td>{job.lastErrorCode ?? "--"}</td><td>{job.createdAt.toLocaleString("zh-CN")}</td></tr>)}</tbody></table></div></main>; }

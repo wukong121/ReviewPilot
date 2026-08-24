@@ -1,0 +1,21 @@
+{
+  "name": "@employee-review/worker",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@azure/communication-email": "^1.1.0",
+    "@azure/identity": "^4.13.0",
+    "@employee-review/db": "*",
+    "@employee-review/domain": "*",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  },
+  "scripts": {
+    "build": "esbuild src/main.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist/main.js --external:@prisma/client --external:@prisma/client/* --external:@azure/communication-email --external:@azure/identity --external:zod",
+    "start": "node dist/main.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  }
+}
