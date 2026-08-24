@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { UserCheck, UserX } from "lucide-react";
 
 type Role = "EMPLOYEE" | "MANAGER" | "ADMIN";
 interface UserRow {
@@ -17,7 +18,7 @@ interface UserRow {
 
 const ROLE_LABELS: Record<Role, string> = { EMPLOYEE: "员工", MANAGER: "经理", ADMIN: "管理员" };
 
-export function UserManager({ initialUsers }: { initialUsers: UserRow[] }) {
+export function UserManager({ initialUsers, currentUserId }: { initialUsers: UserRow[]; currentUserId: string }) {
   const router = useRouter();
   const [editingId, setEditingId] = useState<string>();
   const [email, setEmail] = useState("");
@@ -75,6 +76,29 @@ export function UserManager({ initialUsers }: { initialUsers: UserRow[] }) {
     }
   }
 
+  async function changeActiveState(user: UserRow) {
+    const activate = user.status !== "ACTIVE";
+    if (!activate && !window.confirm(`停用 ${user.displayName}？该用户将立即无法登录，历史评审仍会保留。`)) return;
+    setPending(true);
+    setMessage(undefined);
+    try {
+      const response = await fetch("/api/admin/users", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: user.id, action: activate ? "ACTIVATE" : "DEACTIVATE" }),
+      });
+      const result = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(result.error ?? (activate ? "恢复用户失败" : "停用用户失败"));
+      setMessage(activate ? "用户已恢复。请重新配置需要的审批经理关系。" : "用户已停用，历史数据已保留。");
+      if (editingId === user.id) reset();
+      router.refresh();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "用户状态更新失败");
+    } finally {
+      setPending(false);
+    }
+  }
+
   return (
     <>
       <section className="admin-panel" aria-labelledby="user-form-title">
@@ -87,9 +111,9 @@ export function UserManager({ initialUsers }: { initialUsers: UserRow[] }) {
           {editingId && initialUsers.find((user) => user.id === editingId)?.entraObjectId && <label className="check-row"><input type="checkbox" checked={resetEntraBinding} onChange={(event) => setResetEntraBinding(event.target.checked)} />重置 SSO 绑定，由该邮箱下次登录时重新绑定</label>}
           <div className="button-row">{editingId && <button className="secondary-button" type="button" onClick={reset}>取消</button>}<button className="primary-button" disabled={pending || roles.length === 0} type="submit">{pending ? "保存中..." : "保存用户"}</button></div>
         </form>
-        {message && <p className={message.includes("失败") || message.includes("not") || message.includes("must") || message.includes("already") ? "error-message" : "notice"}>{message}</p>}
+        {message && <p className={message.includes("失败") || message.includes("not") || message.includes("must") || message.includes("already") || message.includes("cannot") ? "error-message" : "notice"}>{message}</p>}
       </section>
-      <div className="table-wrap"><table><thead><tr><th>用户</th><th>邮箱</th><th>SSO</th><th>角色</th><th>审批经理</th><th>状态</th><th><span className="sr-only">操作</span></th></tr></thead><tbody>{initialUsers.map((user) => <tr key={user.id}><td>{user.displayName}</td><td>{user.email}</td><td>{user.entraObjectId ? "已绑定" : "待首次登录"}</td><td>{user.roles.map((role) => ROLE_LABELS[role]).join(" / ")}</td><td>{user.managerName ?? "--"}</td><td>{user.status}</td><td><button className="secondary-button compact-button" type="button" onClick={() => edit(user)}>编辑</button></td></tr>)}</tbody></table></div>
+      <div className="table-wrap"><table><thead><tr><th>用户</th><th>邮箱</th><th>SSO</th><th>角色</th><th>审批经理</th><th>状态</th><th><span className="sr-only">操作</span></th></tr></thead><tbody>{initialUsers.map((user) => <tr key={user.id}><td>{user.displayName}</td><td>{user.email}</td><td>{user.entraObjectId ? "已绑定" : "待首次登录"}</td><td>{user.roles.map((role) => ROLE_LABELS[role]).join(" / ")}</td><td>{user.managerName ?? "--"}</td><td>{user.status}</td><td><div className="inline-actions"><button className="secondary-button compact-button" type="button" onClick={() => edit(user)}>编辑</button><button className={user.status === "ACTIVE" ? "secondary-button compact-button danger" : "secondary-button compact-button"} disabled={pending || user.id === currentUserId} type="button" title={user.id === currentUserId ? "不能停用当前账号" : user.status === "ACTIVE" ? "停用用户" : "恢复用户"} onClick={() => void changeActiveState(user)}>{user.status === "ACTIVE" ? <UserX size={15} aria-hidden /> : <UserCheck size={15} aria-hidden />}{user.status === "ACTIVE" ? "停用" : "恢复"}</button></div></td></tr>)}</tbody></table></div>
     </>
   );
 }

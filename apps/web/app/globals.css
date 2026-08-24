@@ -74,6 +74,7 @@ select, textarea, input[type="text"], input[type="email"], input[type="date"], i
 .role-options { display: flex; flex-wrap: wrap; gap: 12px; }
 .role-options .check-row { padding: 3px 0; }
 .compact-button { min-height: 34px; padding: 5px 10px; font-size: .8rem; }
+.inline-actions { display: flex; gap: 7px; align-items: center; }
 .admin-split { display: grid; grid-template-columns: minmax(210px, .4fr) minmax(0, 1.6fr); gap: 20px; align-items: start; }
 .admin-list { display: grid; gap: 7px; }
 .admin-list > button:not(.secondary-button) { display: grid; gap: 4px; border: 1px solid var(--line); border-radius: 5px; padding: 12px; text-align: left; color: var(--ink); background: white; cursor: pointer; }

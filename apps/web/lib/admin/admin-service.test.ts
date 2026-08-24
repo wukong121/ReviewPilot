@@ -7,6 +7,7 @@ const { prismaMock, tx } = vi.hoisted(() => {
       findFirst: vi.fn(),
       update: vi.fn(),
       create: vi.fn(),
+      count: vi.fn(),
     },
     employeeManager: { updateMany: vi.fn(), create: vi.fn() },
     auditEvent: { create: vi.fn() },
@@ -21,11 +22,11 @@ vi.mock("@employee-review/db", () => ({
   Prisma: {},
   Role: { EMPLOYEE: "EMPLOYEE", MANAGER: "MANAGER", ADMIN: "ADMIN" },
   TemplateStatus: { DRAFT: "DRAFT", PUBLISHED: "PUBLISHED" },
-  UserStatus: { ACTIVE: "ACTIVE" },
+  UserStatus: { ACTIVE: "ACTIVE", INACTIVE: "INACTIVE" },
   prisma: prismaMock,
 }));
 
-import { authorizeUser } from "./admin-service";
+import { authorizeUser, setUserActiveState } from "./admin-service";
 
 describe("authorizeUser", () => {
   beforeEach(() => {
@@ -80,5 +81,53 @@ describe("authorizeUser", () => {
       roles: ["EMPLOYEE"],
     }, { id: "admin-1" })).rejects.toMatchObject({ status: 409 });
     expect(tx.user.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("setUserActiveState", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    tx.employeeManager.updateMany.mockResolvedValue({ count: 1 });
+    tx.user.update.mockResolvedValue({ id: "user-1", status: "INACTIVE" });
+    tx.auditEvent.create.mockResolvedValue({ id: "audit-1" });
+  });
+
+  it("deactivates a user without deleting historical data", async () => {
+    tx.user.findUnique.mockResolvedValue({ id: "user-1", status: "ACTIVE", roles: [{ role: "EMPLOYEE" }] });
+
+    await setUserActiveState("user-1", false, { id: "admin-1" });
+
+    expect(tx.employeeManager.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { OR: [{ employeeId: "user-1" }, { managerId: "user-1" }], effectiveTo: null },
+    }));
+    expect(tx.user.update).toHaveBeenCalledWith({ where: { id: "user-1" }, data: { status: "INACTIVE" } });
+    expect(tx.auditEvent.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ action: "USER_DEACTIVATED", entityId: "user-1" }),
+    }));
+  });
+
+  it("prevents an administrator from deactivating their own account", async () => {
+    tx.user.findUnique.mockResolvedValue({ id: "admin-1", status: "ACTIVE", roles: [{ role: "ADMIN" }] });
+
+    await expect(setUserActiveState("admin-1", false, { id: "admin-1" })).rejects.toMatchObject({ status: 409 });
+    expect(tx.user.update).not.toHaveBeenCalled();
+  });
+
+  it("preserves the last active administrator", async () => {
+    tx.user.findUnique.mockResolvedValue({ id: "admin-2", status: "ACTIVE", roles: [{ role: "ADMIN" }] });
+    tx.user.count.mockResolvedValue(0);
+
+    await expect(setUserActiveState("admin-2", false, { id: "admin-1" })).rejects.toMatchObject({ status: 409 });
+    expect(tx.user.update).not.toHaveBeenCalled();
+  });
+
+  it("restores a user without restoring expired manager relationships", async () => {
+    tx.user.findUnique.mockResolvedValue({ id: "user-1", status: "INACTIVE", roles: [{ role: "EMPLOYEE" }] });
+    tx.user.update.mockResolvedValue({ id: "user-1", status: "ACTIVE" });
+
+    await setUserActiveState("user-1", true, { id: "admin-1" });
+
+    expect(tx.employeeManager.updateMany).not.toHaveBeenCalled();
+    expect(tx.user.update).toHaveBeenCalledWith({ where: { id: "user-1" }, data: { status: "ACTIVE" } });
   });
 });

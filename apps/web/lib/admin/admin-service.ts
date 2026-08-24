@@ -90,6 +90,47 @@ export async function authorizeUser(input: {
   });
 }
 
+export async function setUserActiveState(userId: string, active: boolean, actor: AdminActor) {
+  return prisma.$transaction(async (tx) => {
+    const user = await tx.user.findUnique({
+      where: { id: userId },
+      select: { id: true, status: true, roles: { select: { role: true } } },
+    });
+    if (!user) throw Object.assign(new Error("user not found"), { status: 404 });
+
+    if (!active) {
+      if (user.id === actor.id) {
+        throw Object.assign(new Error("you cannot deactivate your own account"), { status: 409 });
+      }
+      if (user.roles.some(({ role }) => role === Role.ADMIN)) {
+        const otherActiveAdmins = await tx.user.count({
+          where: { id: { not: user.id }, status: UserStatus.ACTIVE, roles: { some: { role: Role.ADMIN } } },
+        });
+        if (otherActiveAdmins === 0) {
+          throw Object.assign(new Error("the last active administrator cannot be deactivated"), { status: 409 });
+        }
+      }
+      await tx.employeeManager.updateMany({
+        where: { OR: [{ employeeId: user.id }, { managerId: user.id }], effectiveTo: null },
+        data: { effectiveTo: new Date() },
+      });
+    }
+
+    const status = active ? UserStatus.ACTIVE : UserStatus.INACTIVE;
+    const updated = await tx.user.update({ where: { id: user.id }, data: { status } });
+    await tx.auditEvent.create({
+      data: {
+        actorId: actor.id,
+        action: active ? "USER_ACTIVATED" : "USER_DEACTIVATED",
+        entityType: "User",
+        entityId: user.id,
+        metadataJson: { previousStatus: user.status, status },
+      },
+    });
+    return updated;
+  });
+}
+
 export async function listTemplates() {
   return prisma.template.findMany({ orderBy: { createdAt: "desc" }, include: { versions: { orderBy: { version: "desc" } } } });
 }
