@@ -143,6 +143,137 @@ dev:  repo:wukong121@79131635/ReviewPilot@1342422898:environment:dev
 
 不要改用 branch subject（例如 `ref:refs/heads/master`）或传统的 `repo:wukong121/ReviewPilot:environment:prod`。Issuer 为 `https://token.actions.githubusercontent.com`，audience 为 `api://AzureADTokenExchange`。当前 prod credential 名为 `github-reviewpilot-prod`。
 
+## 创建 GitHub Actions OIDC 部署身份
+
+OIDC 部署身份与员工登录使用的 Entra App Registration 是两个独立身份。本节创建 User-assigned Managed Identity，专门供 GitHub Actions 无密码登录 Azure。执行者需要有权创建 Managed Identity，并在目标 subscription 分配 Azure RBAC 角色。
+
+### 1. 创建 Managed Identity
+
+先在本地安装并登录 Azure CLI，然后切换到目标 tenant 和 subscription：
+
+```bash
+az login --tenant '<tenant-id>'
+az account set --subscription '<subscription-id>'
+
+SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+TENANT_ID=$(az account show --query tenantId -o tsv)
+IDENTITY_RESOURCE_GROUP='reviewpilot-bootstrap-rg'
+IDENTITY_NAME='reviewpilot-github'
+LOCATION='westus'
+
+az group create \
+	--name "$IDENTITY_RESOURCE_GROUP" \
+	--location "$LOCATION" \
+	--output none
+
+az identity create \
+	--name "$IDENTITY_NAME" \
+	--resource-group "$IDENTITY_RESOURCE_GROUP" \
+	--location "$LOCATION" \
+	--output none
+
+AZURE_CLIENT_ID=$(az identity show \
+	--name "$IDENTITY_NAME" \
+	--resource-group "$IDENTITY_RESOURCE_GROUP" \
+	--query clientId -o tsv)
+
+AZURE_PRINCIPAL_ID=$(az identity show \
+	--name "$IDENTITY_NAME" \
+	--resource-group "$IDENTITY_RESOURCE_GROUP" \
+	--query principalId -o tsv)
+```
+
+`AZURE_CLIENT_ID` 是后续 GitHub Environment Variable 的值；RBAC assignment 使用 `AZURE_PRINCIPAL_ID`，不要混用两者。
+
+### 2. 分配 Azure 部署权限
+
+当前 workflow 会创建 Resource Group 和资源级 RBAC assignment，因此部署身份需要 `Contributor` 和 `Role Based Access Control Administrator`：
+
+```bash
+SUBSCRIPTION_SCOPE="/subscriptions/$SUBSCRIPTION_ID"
+
+az role assignment create \
+	--assignee-object-id "$AZURE_PRINCIPAL_ID" \
+	--assignee-principal-type ServicePrincipal \
+	--role Contributor \
+	--scope "$SUBSCRIPTION_SCOPE"
+
+az role assignment create \
+	--assignee-object-id "$AZURE_PRINCIPAL_ID" \
+	--assignee-principal-type ServicePrincipal \
+	--role 'Role Based Access Control Administrator' \
+	--scope "$SUBSCRIPTION_SCOPE"
+```
+
+这是 subscription 级高权限身份，应只信任指定仓库的 GitHub Environment，并在 `prod` Environment 启用 required reviewers。若组织要求更小权限范围，需要先预创建目标 Resource Group，并同步调整 workflow 的资源组创建和授权设计。
+
+### 3. 创建 federated credentials
+
+workflow 的 deploy job 使用 GitHub Environment，因此 `dev` 和 `prod` 必须分别创建 credential。新仓库默认 subject 格式为：
+
+```text
+repo:<github-owner>/<repository>:environment:<environment>
+```
+
+例如 Fork 位于 `alice/ReviewPilot`：
+
+```bash
+GITHUB_OWNER='alice'
+GITHUB_REPOSITORY='ReviewPilot'
+
+az identity federated-credential create \
+	--name github-reviewpilot-prod \
+	--identity-name "$IDENTITY_NAME" \
+	--resource-group "$IDENTITY_RESOURCE_GROUP" \
+	--issuer 'https://token.actions.githubusercontent.com' \
+	--subject "repo:$GITHUB_OWNER/$GITHUB_REPOSITORY:environment:prod" \
+	--audiences 'api://AzureADTokenExchange'
+
+az identity federated-credential create \
+	--name github-reviewpilot-dev \
+	--identity-name "$IDENTITY_NAME" \
+	--resource-group "$IDENTITY_RESOURCE_GROUP" \
+	--issuer 'https://token.actions.githubusercontent.com' \
+	--subject "repo:$GITHUB_OWNER/$GITHUB_REPOSITORY:environment:dev" \
+	--audiences 'api://AzureADTokenExchange'
+```
+
+GitHub Enterprise 或 organization 可能自定义 OIDC subject，例如加入 immutable owner/repository ID。此时默认格式不会匹配。先运行一次 workflow；`AADSTS700213` 错误中的 **Subject** 是 GitHub 实际签发值，必须把它逐字符复制到 federated credential 的 `--subject`。不要猜测，也不要改成 branch subject，因为 deploy job 已绑定 Environment。
+
+### 4. 配置 GitHub Environments
+
+在 Fork 仓库进入 **Settings → Environments**，分别创建 `dev` 和 `prod`，并在两个 Environment 中添加：
+
+| Variable | 值 |
+|---|---|
+| `AZURE_CLIENT_ID` | 上面取得的 Managed Identity `clientId` |
+| `AZURE_TENANT_ID` | `$TENANT_ID` |
+| `AZURE_SUBSCRIPTION_ID` | `$SUBSCRIPTION_ID` |
+| `AZURE_RESOURCE_GROUP` | 该环境部署 ReviewPilot 的目标 Resource Group |
+| `AZURE_LOCATION` | 目标 Azure region，例如 `westus` |
+
+Fork 不会复制原仓库的 Environment Variables 或 Secrets，其余应用配置也必须按本文开头的表格重新填写。
+
+### 5. 验证 OIDC 配置
+
+先确认 Azure 中的 credential 和角色：
+
+```bash
+az identity federated-credential list \
+	--identity-name "$IDENTITY_NAME" \
+	--resource-group "$IDENTITY_RESOURCE_GROUP" \
+	--query '[].{name:name,issuer:issuer,subject:subject,audiences:audiences}' \
+	--output table
+
+az role assignment list \
+	--assignee "$AZURE_PRINCIPAL_ID" \
+	--all \
+	--query '[].{role:roleDefinitionName,scope:scope}' \
+	--output table
+```
+
+然后在 **Actions → Deploy employee review → Run workflow** 选择 `dev` 或 `prod`。`Azure login with OIDC` 成功即表示 issuer、audience、subject、Client ID、Tenant ID 和 Subscription ID 已正确匹配。新建 credential 或 role assignment 后可能需要等待数分钟再启动新的 workflow run。
+
 ## 创建 ReviewPilot Entra 登录应用
 
 执行者需要在公司 tenant 中拥有创建 App Registration 的权限，例如 `Application Developer`、`Cloud Application Administrator` 或更高权限。以下步骤只需执行一次；建议 dev 和 prod 分别创建应用。
