@@ -1,6 +1,7 @@
 using '../main.bicep'
 
 param environmentName = 'prod'
+param resourcePrefix = readEnvironmentVariable('RESOURCE_PREFIX')
 param postgresAdministratorPassword = readEnvironmentVariable('POSTGRES_ADMIN_PASSWORD')
 param highAvailability = false
 param acsCommunicationServiceName = readEnvironmentVariable('ACS_COMMUNICATION_SERVICE_NAME')

@@ -4,6 +4,7 @@ Describe 'ReviewPilot infrastructure' {
   It 'uses managed identity and Key Vault references' { $apps | Should -Match 'UserAssigned'; $apps | Should -Match 'keyVaultUrl'; $apps | Should -Match 'identityId' }
   It 'exposes only the Web app' { $apps | Should -Match "external: true"; $apps | Should -Not -Match "name: 'worker'[\s\S]*external: true" }
   It 'retains PostgreSQL backups for 14 days' { $database | Should -Match 'backupRetentionDays: 14' }
+  It 'uses a configurable resource prefix' { $source | Should -Match 'param resourcePrefix string'; $source | Should -Match "var prefix = '\$\{resourcePrefix\}-\$\{environmentName\}'" }
   It 'uses private networking for application dependencies' { $apps | Should -Match 'infrastructureSubnetId'; $networking | Should -Match 'privateEndpoints'; $networking | Should -Match 'privatelink.vaultcore.azure.net'; $networking | Should -Match 'privatelink.postgres.database.azure.com'; $networking | Should -Match "groupIds: \['postgresqlServer'\]"; $keyVault | Should -Match "publicNetworkAccess: 'Disabled'" }
   It 'does not place plaintext secrets in parameter files' { (Get-ChildItem "$PSScriptRoot/../environments/*.bicepparam" | Get-Content -Raw) | Should -Not -Match '(apiKey|clientSecret|password)\s*=\s*[''\"]' }
 }

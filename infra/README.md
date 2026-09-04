@@ -1,6 +1,6 @@
 # Azure infrastructure
 
-The supported deployment path is the manual GitHub Actions workflow. Configure the `dev` and `prod` GitHub Environments as documented in [the operations runbook](../docs/operations/runbook.md). The workflow creates the resource group when needed, and Bicep creates Key Vault secrets from secure deployment inputs. Do not create secret values manually in Azure or place them in parameter files.
+The supported deployment path is the manual GitHub Actions workflow. Configure the `dev` and `prod` GitHub Environments as documented in [the operations runbook](../docs/operations/runbook.md). Forks must set a globally unique `RESOURCE_PREFIX`; the default `reviewpilot` remains backward compatible with the original deployment. The workflow creates the resource group when needed, and Bicep creates Key Vault secrets from secure deployment inputs. Do not create secret values manually in Azure or place them in parameter files.
 
 ## Custom domain and HTTPS
 

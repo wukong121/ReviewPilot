@@ -42,6 +42,7 @@ jobs:
     environment: ${{ inputs.environment }}
     env:
       RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      RESOURCE_PREFIX: ${{ vars.RESOURCE_PREFIX || 'reviewpilot' }}
       AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
       POSTGRES_ADMIN_PASSWORD: ${{ secrets.POSTGRES_ADMIN_PASSWORD }}
       AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
@@ -64,6 +65,12 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Validate deployment variables
+        run: |
+          [[ "$RESOURCE_PREFIX" =~ ^[a-z0-9][a-z0-9-]{1,13}[a-z0-9]$ ]] || {
+            echo "RESOURCE_PREFIX must be 3-15 lowercase letters, numbers, or hyphens, without leading or trailing hyphens."
+            exit 1
+          }
       - name: Azure login with OIDC
         uses: azure/login@v2
         with:
@@ -74,7 +81,7 @@ jobs:
         id: registry
         run: |
           az group create --name "$RESOURCE_GROUP" --location "$AZURE_LOCATION" --output none
-          REGISTRY=$(az deployment group create --resource-group "$RESOURCE_GROUP" --name "reviewpilot-registry-${{ inputs.environment }}" --template-file infra/modules/registry.bicep --parameters location="$AZURE_LOCATION" prefix="reviewpilot-${{ inputs.environment }}" --query properties.outputs.loginServer.value -o tsv)
+          REGISTRY=$(az deployment group create --resource-group "$RESOURCE_GROUP" --name "reviewpilot-registry-${{ inputs.environment }}" --template-file infra/modules/registry.bicep --parameters location="$AZURE_LOCATION" prefix="${RESOURCE_PREFIX}-${{ inputs.environment }}" --query properties.outputs.loginServer.value -o tsv)
           echo "login_server=$REGISTRY" >> "$GITHUB_OUTPUT"
           az acr login --name "$REGISTRY"
       - name: Build and push Web image
@@ -133,7 +140,7 @@ jobs:
           npm run seed -w @employee-review/db
       - name: Refresh Container Apps revisions
         run: |
-          az containerapp update --resource-group "$RESOURCE_GROUP" --name "reviewpilot-${{ inputs.environment }}-web" --image "${{ steps.infrastructure.outputs.registry }}/reviewpilot-web:$IMAGE_TAG"
-          az containerapp update --resource-group "$RESOURCE_GROUP" --name "reviewpilot-${{ inputs.environment }}-worker" --image "${{ steps.infrastructure.outputs.registry }}/reviewpilot-worker:$IMAGE_TAG"
+          az containerapp update --resource-group "$RESOURCE_GROUP" --name "${RESOURCE_PREFIX}-${{ inputs.environment }}-web" --image "${{ steps.infrastructure.outputs.registry }}/reviewpilot-web:$IMAGE_TAG"
+          az containerapp update --resource-group "$RESOURCE_GROUP" --name "${RESOURCE_PREFIX}-${{ inputs.environment }}-worker" --image "${{ steps.infrastructure.outputs.registry }}/reviewpilot-worker:$IMAGE_TAG"
       - name: Health check
         run: curl --fail --retry 12 --retry-delay 10 --retry-all-errors "https://${{ steps.infrastructure.outputs.web_fqdn }}/api/health"

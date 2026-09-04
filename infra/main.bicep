@@ -3,6 +3,9 @@ targetScope = 'resourceGroup'
 param location string = resourceGroup().location
 @allowed(['dev', 'prod'])
 param environmentName string
+@minLength(3)
+@maxLength(15)
+param resourcePrefix string = 'reviewpilot'
 param imageTag string = 'latest'
 param postgresAdministratorLogin string = 'reviewpilotadmin'
 @secure()
@@ -13,7 +16,7 @@ param acsCommunicationServiceName string
 param applicationSecrets object
 param tags object = { application: 'ReviewPilot', environment: environmentName }
 
-var prefix = 'reviewpilot-${environmentName}'
+var prefix = '${resourcePrefix}-${environmentName}'
 var secretNames = {
   'database-url': 'database-url'
   'auth-secret': 'auth-secret'

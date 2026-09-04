@@ -16,6 +16,7 @@
 | `AZURE_TENANT_ID` | Azure subscription 所在 tenant ID |
 | `AZURE_SUBSCRIPTION_ID` | 目标 Azure subscription ID |
 | `AZURE_RESOURCE_GROUP` | 例如 `reviewpilot-dev-rg`；不存在时 workflow 自动创建 |
+| `RESOURCE_PREFIX` | 资源名称前缀；Fork 必须使用全局唯一值，例如 `reviewpilot314` |
 | `AZURE_LOCATION` | 例如 `eastasia` 或 `southeastasia` |
 | `ENTRA_TENANT_ID` | 员工登录使用的公司 tenant ID，通常与 `AZURE_TENANT_ID` 相同 |
 | `ENTRA_CLIENT_ID` | ReviewPilot 登录应用的 Client ID |
@@ -250,9 +251,23 @@ GitHub Enterprise 或 organization 可能自定义 OIDC subject，例如加入 i
 | `AZURE_TENANT_ID` | `$TENANT_ID` |
 | `AZURE_SUBSCRIPTION_ID` | `$SUBSCRIPTION_ID` |
 | `AZURE_RESOURCE_GROUP` | 该环境部署 ReviewPilot 的目标 Resource Group |
+| `RESOURCE_PREFIX` | 3–15 位小写字母、数字或连字符，例如 `reviewpilot314` |
 | `AZURE_LOCATION` | 目标 Azure region，例如 `westus` |
 
 Fork 不会复制原仓库的 Environment Variables 或 Secrets，其余应用配置也必须按本文开头的表格重新填写。
+
+`RESOURCE_PREFIX` 会参与 ACR、Key Vault、PostgreSQL、Container Apps 等资源命名。ACR、Key Vault 和 PostgreSQL DNS 名称具有 Azure 全局唯一性，因此 Fork 不能继续使用默认 `reviewpilot`。建议加入团队、项目或随机短后缀，例如 `reviewpilot314`；两个 Environment 可以使用相同前缀，系统会自动附加 `-dev` 或 `-prod`。首次成功部署后不要修改该值，否则 Azure 会创建一套新资源。
+
+如果首次部署在 `Bootstrap container registry` 步骤报 `AlreadyInUse`，说明生成的 ACR DNS 名已被其他订阅占用。在对应 GitHub Environment 添加或更换 `RESOURCE_PREFIX` 后启动新的 workflow run即可；失败的 ACR deployment 不需要手工删除。可预先检查生成名称，例如 `RESOURCE_PREFIX=reviewpilot314`、环境为 `prod` 时：
+
+```bash
+az acr check-name \
+	--name reviewpilot314prodacr \
+	--query '{available:nameAvailable,reason:reason,message:message}' \
+	--output table
+```
+
+只有 `available` 为 `true` 时才使用该前缀。该检查只验证 ACR；如后续 Key Vault 或 PostgreSQL 报同类全局名称冲突，应再次更换 `RESOURCE_PREFIX`。
 
 ### 5. 验证 OIDC 配置
 
