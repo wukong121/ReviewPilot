@@ -420,6 +420,10 @@ cp apps/worker/.env.example apps/worker/.env
 
 workflow 没有 push、pull request 或 schedule 部署触发器。建议在 `prod` Environment 启用 required reviewers。
 
+GitHub Actions 只能按 job 重跑，不能从失败 job 的某个 step 继续。对同一次 run 选择 **Re-run failed jobs** 时，已成功的 `verify` job 不会重复；如果 `deploy` job 失败，该 job 仍会从 checkout 重新开始。workflow 会按 commit SHA 检查 ACR：已存在的 Web/Worker 镜像会跳过 Docker login、build 和 push。deploy job 的 `npm ci` 也延后到 infrastructure 成功之后，仅在执行 Prisma migration/seed 前运行。由于 GitHub-hosted runner 每次都是全新机器，达到 migration 阶段时仍必须重新安装 Node dependencies；Prisma migration 和 seed 本身是幂等的。
+
+手动点击 **Run workflow** 会创建一条全新的 run，因此 `verify` 会重新执行。若代码 SHA 未变化，镜像仍会因 ACR 中已有对应 tag 而跳过构建。
+
 ## 域名：先部署，再配置 DNS
 
 部署前不需要知道 Container Apps IP。请先在 GitHub Environment 中把 `PUBLIC_BASE_URL` 填成计划使用的最终地址，例如 `https://reviews.company.com`，然后运行第一次部署。

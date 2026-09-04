@@ -60,11 +60,6 @@ jobs:
       IMAGE_TAG: ${{ github.sha }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
       - name: Validate deployment variables
         run: |
           [[ "$RESOURCE_PREFIX" =~ ^[a-z0-9][a-z0-9-]{1,13}[a-z0-9]$ ]] || {
@@ -83,12 +78,32 @@ jobs:
           az group create --name "$RESOURCE_GROUP" --location "$AZURE_LOCATION" --output none
           REGISTRY=$(az deployment group create --resource-group "$RESOURCE_GROUP" --name "reviewpilot-registry-${{ inputs.environment }}" --template-file infra/modules/registry.bicep --parameters location="$AZURE_LOCATION" prefix="${RESOURCE_PREFIX}-${{ inputs.environment }}" --query properties.outputs.loginServer.value -o tsv)
           echo "login_server=$REGISTRY" >> "$GITHUB_OUTPUT"
-          az acr login --name "$REGISTRY"
+          echo "name=${REGISTRY%%.*}" >> "$GITHUB_OUTPUT"
+      - name: Check existing images
+        id: images
+        run: |
+          WEB_EXISTS=false
+          WORKER_EXISTS=false
+          if az acr repository show --name "${{ steps.registry.outputs.name }}" --image "reviewpilot-web:$IMAGE_TAG" --only-show-errors --output none 2>/dev/null; then
+            WEB_EXISTS=true
+          fi
+          if az acr repository show --name "${{ steps.registry.outputs.name }}" --image "reviewpilot-worker:$IMAGE_TAG" --only-show-errors --output none 2>/dev/null; then
+            WORKER_EXISTS=true
+          fi
+          echo "web_exists=$WEB_EXISTS" >> "$GITHUB_OUTPUT"
+          echo "worker_exists=$WORKER_EXISTS" >> "$GITHUB_OUTPUT"
+          echo "Web image exists: $WEB_EXISTS"
+          echo "Worker image exists: $WORKER_EXISTS"
+      - name: Azure container registry login
+        if: steps.images.outputs.web_exists != 'true' || steps.images.outputs.worker_exists != 'true'
+        run: az acr login --name "${{ steps.registry.outputs.name }}"
       - name: Build and push Web image
+        if: steps.images.outputs.web_exists != 'true'
         run: |
           docker build -f apps/web/Containerfile -t "${{ steps.registry.outputs.login_server }}/reviewpilot-web:$IMAGE_TAG" .
           docker push "${{ steps.registry.outputs.login_server }}/reviewpilot-web:$IMAGE_TAG"
       - name: Build and push Worker image
+        if: steps.images.outputs.worker_exists != 'true'
         run: |
           docker build -f apps/worker/Containerfile -t "${{ steps.registry.outputs.login_server }}/reviewpilot-worker:$IMAGE_TAG" .
           docker push "${{ steps.registry.outputs.login_server }}/reviewpilot-worker:$IMAGE_TAG"
@@ -125,6 +140,12 @@ jobs:
             echo ""
             echo "For an apex domain such as \`company.com\`, create A \`@\` to the static IP and TXT \`asuid\` with the verification value."
           } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install migration dependencies
+        run: npm ci
       - name: Apply database migrations
         run: |
           POSTGRES_SERVER=$(jq -r '.postgresServerName.value' deployment-outputs.json)
