@@ -1,5 +1,7 @@
 # ReviewPilot 运行手册
 
+永久删除测试环境时，使用 [Azure 环境清理手册](cleanup.md)，不要直接删除包含共享 APIM、ACS 或其他工作负载的 Resource Group。
+
 ## 配置放在哪里
 
 正式部署配置不写入仓库文件，也不需要提前手工创建 Key Vault secret。请在 GitHub 仓库进入：

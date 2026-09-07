@@ -2,6 +2,8 @@
 
 The supported deployment path is the manual GitHub Actions workflow. Configure the `dev` and `prod` GitHub Environments as documented in [the operations runbook](../docs/operations/runbook.md). Forks must set a globally unique `RESOURCE_PREFIX`; the default `reviewpilot` remains backward compatible with the original deployment. The workflow creates the resource group when needed, and Bicep creates Key Vault secrets from secure deployment inputs. Do not create secret values manually in Azure or place them in parameter files.
 
+For permanent teardown, follow the [Azure cleanup runbook](../docs/operations/cleanup.md). It distinguishes dedicated resource-group deletion from prefix-scoped cleanup in a shared resource group.
+
 ## Custom domain and HTTPS
 
 Do not configure DNS before the first deployment. The GitHub Actions run summary prints `webFqdn`, `environmentStaticIp`, and `domainVerificationToken` after Azure has created the Container Apps environment.
